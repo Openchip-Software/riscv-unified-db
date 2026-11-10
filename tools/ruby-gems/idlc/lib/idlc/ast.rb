@@ -5289,8 +5289,12 @@ module Idl
             when "*", "`*"
               lhs.value(symtab) * rhs.value(symtab)
             when "/"
+              # a constant division by zero has no value; the code is unreachable
+              # or faults at run time, so report the value as unknown
+              value_error "Division by zero" if rhs.value(symtab).zero?
               lhs.value(symtab) / rhs.value(symtab)
             when "%"
+              value_error "Division by zero" if rhs.value(symtab).zero?
               lhs.value(symtab) % rhs.value(symtab)
             when "^"
               lhs.value(symtab) ^ rhs.value(symtab)
