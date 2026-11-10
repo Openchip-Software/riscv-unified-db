@@ -43,7 +43,7 @@ module Idl
       end
     end
 
-    # returns nil if array holds bools
+    # returns nil if array holds bools or strings
     # otherwise (it holds bits), returns max bitwidth of all elements
     sig { params(symtab: Idl::SymbolTable, node: Idl::AstNode, max: T.nilable(Integer)).returns(T.nilable(Integer)) }
     def self.find_max_element_width(symtab, node, max = nil)
@@ -53,7 +53,7 @@ module Idl
           max.nil? ? e_max : [max, e_max].max
         end.max
       else
-        if node.is_a?(Idl::TrueExpressionAst) || node.is_a?(Idl::FalseExpressionAst)
+        if node.is_a?(Idl::TrueExpressionAst) || node.is_a?(Idl::FalseExpressionAst) || node.is_a?(Idl::StringLiteralAst)
           nil
         else
           node_width = node.type(symtab).width
@@ -86,6 +86,9 @@ module Idl
         create_int_literal(value, forced_type:)
       when :boolean
         create_bool_literal(value)
+      when :string
+        text = "\"#{value}\""
+        Idl::StringLiteralAst.new(text, 0...text.size, text)
       when :array
         elements = value.map { |e| create_literal(symtab, e, type.sub_type) }
         # array elements MUST have the same type, so we need to coerce them
