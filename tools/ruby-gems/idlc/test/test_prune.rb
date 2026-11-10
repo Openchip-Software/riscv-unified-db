@@ -33,6 +33,17 @@ class TestVariables < Minitest::Test
     assert_equal expected_idl, pruned.to_idl
   end
 
+  # A constant division or remainder by zero has no value. It must be reported as
+  # unknown, not raise ZeroDivisionError, so that the type checker can fold the
+  # surrounding code; such code is unreachable or faults at run time.
+  def test_constant_division_by_zero_is_unknown
+    symtab = Idl::SymbolTable.new
+    ["/", "%"].each do |op|
+      ast = @compiler.parser.parse("8'd8 #{op} 8'd0", root: :expression).to_ast
+      assert_equal(:unknown_value, Idl::AstNode.value_try { ast.value(symtab) }, "8 #{op} 0 should have no value")
+    end
+  end
+
   def test_prune_forced_type_nested
     orig_idl = "true ? 4'b0 : (5'b1 * 1)"
 
