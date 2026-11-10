@@ -1,0 +1,59 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+
+# WARNING: This file is auto-generated from spec/std/isa/param/SUPPORTED_LAMBDA_SEWN.layout
+
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/param_schema.json
+
+$schema: param_schema.json#
+kind: parameter
+name: SUPPORTED_LAMBDA_SEW64
+long_name: Lambda values supported when SEW=64
+description: |
+  The nonzero lambda values that the implementation supports for the
+  `vtype.lambda[2:0]` field when SEW=64. SEW is the element width of
+  the C accumulator tile.
+
+  The specification makes the supported set an implementation-defined
+  function of VLEN and SEW. VLEN is fixed by the configuration, so one list
+  per SEW describes the function completely. LMUL does not affect whether a
+  lambda value is supported.
+
+  A lambda value is architecturally permissible only when
+  EMUL_C = VLEN / (SEW × lambda^2^) is in {1, 2, 4, 8, 16}.
+  For every (VLEN, SEW) in the IME-legal configuration domain, at least one
+  permissible value must be supported.
+
+  A `vtype` write of an unsupported nonzero lambda selects the largest
+  supported value that is not greater than the request, or else the smallest
+  supported value. A tile load or store with an unsupported nonzero immediate
+  lambda raises an illegal-instruction exception.
+schema:
+  type: array
+  items:
+    type: integer
+    enum: [1, 2, 4, 8, 16, 32, 64]
+  minItems: 1
+  maxItems: 7
+  uniqueItems: true
+definedBy:
+  extension:
+    allOf:
+      - anyOf:
+          - name: Zvvmm
+          - name: Zvvfmm
+          - name: Zvvmtls
+          - name: Zvvmttls
+      - name: Zve64x
+requirements:
+  idl(): |
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 1) -> (VLEN >= 64) && (VLEN <= 1024);
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 2) -> (VLEN >= 256) && (VLEN <= 4096);
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 4) -> (VLEN >= 1024) && (VLEN <= 16384);
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 8) -> (VLEN >= 4096) && (VLEN <= 65536);
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 16) -> (VLEN >= 16384) && (VLEN <= 262144);
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 32) -> (VLEN >= 65536) && (VLEN <= 1048576);
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 64) -> (VLEN >= 262144) && (VLEN <= 4194304);
+  reason: |
+    Each supported lambda must give EMUL_C = VLEN / (64 × lambda^2) in {1, 2, 4, 8, 16}.
