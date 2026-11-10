@@ -87,6 +87,27 @@ class TestCfgHeaders < Minitest::Test
     assert_includes svh_lines, "`define UDB_X_MASK 64'h8000000000000000"
   end
 
+  def test_integer_array_is_a_set_unless_positional
+    lines = []
+    UdbGen::GenCfgCHeaderOptions.new.send(:emit_array_param, lines, "UDB_X", [2, 1, 2])
+    assert_equal ["#define UDB_X_1", "#define UDB_X_2"], lines
+  end
+
+  def test_positional_integer_array_emits_each_index
+    lines = []
+    UdbGen::GenCfgCHeaderOptions.new.send(:emit_array_param, lines, "UDB_X", [1, 2, 0], positional: true)
+    assert_includes lines, "#define UDB_X_IDX0 1"
+    assert_includes lines, "#define UDB_X_IDX1 2"
+    assert_includes lines, "#define UDB_X_IDX2 0"
+  end
+
+  def test_positional_string_array_emits_each_index
+    lines = []
+    UdbGen::GenCfgCHeaderOptions.new.send(:emit_array_param, lines, "UDB_X", ["xct", "none"], positional: true)
+    assert_includes lines, "#define UDB_X_IDX0_XCT"
+    assert_includes lines, "#define UDB_X_IDX1_NONE"
+  end
+
   def test_empty_array_emits_nothing
     lines = []
     UdbGen::GenCfgCHeaderOptions.new.send(:emit_array_param, lines, "UDB_X", [])
