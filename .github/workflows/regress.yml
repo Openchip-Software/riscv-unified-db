@@ -418,6 +418,7 @@ jobs:
         cfg:
           - _
           - rv32
+          - rv64-ime # a config with the Zvvm extensions
   regress-test-inst-encodings:
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,41 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+
+# WARNING: This file is auto-generated from spec/std/isa/ext/ZvvTYPEmm.layout
+
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/ext_schema.json
+
+$schema: "ext_schema.json#"
+kind: extension
+name: Zvvxnofp8fp64mm
+long_name: Microscaled matrix multiply-accumulate, MXFP8 inputs, IEEE binary64 accumulator, block size 16
+description: |
+  Enables the `vm=0` (`v0.scale`) encodings of `vf8wmmacc.vv` (W=8,
+  SEW=64) for E8M0-scaled MXFP8 A and B input elements and
+  IEEE binary64 C accumulator elements, with block size 16
+  (`vtype.bs` = 1).
+  The floating-point encoding map of the Zvvm specification names this
+  extension in the block-size cells that it makes legal.
+
+  With block size 16, the instruction raises an illegal-instruction exception
+  unless W × LMUL ≤ SEW.
+
+  Zvvxnofp8fp64mm implies Zvvxofp8fp64mm.
+type: unprivileged
+versions:
+  - version: "0.9.0"
+    # commit: e99d9065 (tag v0.9.0-on-main)
+    state: development
+    repositories:
+      - url: https://github.com/riscv/integrated-matrix-extension
+        branch: main
+    requirements:
+      extension:
+        name: Zvvxofp8fp64mm
+        version: "= 0.9.0"
+requirements:
+  extension:
+    allOf:
+      - name: Zvvfmm
+      - name: Zve64d

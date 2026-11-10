@@ -1,0 +1,33 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+
+# WARNING: This file is auto-generated from spec/std/isa/ext/ZvvTYPEmm.layout
+
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/ext_schema.json
+
+$schema: "ext_schema.json#"
+kind: extension
+name: Zvvi8mm
+long_name: Matrix multiply-accumulate, [U]Int8 inputs, Int8 accumulator
+description: |
+  Enables the `vmmacc.vv` (W=1, SEW=8) encodings with
+  [U]Int8 A and B input elements and Int8 C accumulator
+  elements. The integer encoding map of the Zvvm specification names this
+  extension in the rows that it makes legal.
+
+  `vtype.altfmt_A` and `vtype.altfmt_B` select signed (0) or unsigned (1)
+  interpretation of the A and B inputs. The accumulator is signed.
+type: unprivileged
+versions:
+  - version: "0.9.0"
+    # commit: e99d9065 (tag v0.9.0-on-main)
+    state: development
+    repositories:
+      - url: https://github.com/riscv/integrated-matrix-extension
+        branch: main
+requirements:
+  extension:
+    allOf:
+      - name: Zvvmm
+      - name: Zve32x

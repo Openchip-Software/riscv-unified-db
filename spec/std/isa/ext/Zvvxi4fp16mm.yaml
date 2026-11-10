@@ -1,0 +1,36 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+
+# WARNING: This file is auto-generated from spec/std/isa/ext/ZvvTYPEmm.layout
+
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/ext_schema.json
+
+$schema: "ext_schema.json#"
+kind: extension
+name: Zvvxi4fp16mm
+long_name: Microscaled matrix multiply-accumulate, MXINT4 inputs, IEEE binary16 accumulator, block size 32
+description: |
+  Enables the `vm=0` (`v0.scale`) encodings of `vfqimmacc.vv` (W=4,
+  SEW=16) for E8M0-scaled MXINT4 A and B input elements and
+  IEEE binary16 C accumulator elements, with block size 32
+  (`vtype.bs` = 0).
+  The integer MX encoding map of the Zvvm specification names this
+  extension in the block-size cells that it makes legal.
+
+  The integer-input microscaling extensions imply no other extension.
+  `vfqimmacc.vv` has no unscaled form; its `vm=1` encoding is the integer
+  instruction of Zvvmm.
+type: unprivileged
+versions:
+  - version: "0.9.0"
+    # commit: e99d9065 (tag v0.9.0-on-main)
+    state: development
+    repositories:
+      - url: https://github.com/riscv/integrated-matrix-extension
+        branch: main
+requirements:
+  extension:
+    allOf:
+      - name: Zvvfmm
+      - name: Zve32f

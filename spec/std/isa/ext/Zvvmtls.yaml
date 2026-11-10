@@ -1,0 +1,37 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/ext_schema.json
+
+$schema: "ext_schema.json#"
+kind: extension
+name: Zvvmtls
+long_name: Matrix tile load and store for vector register groups
+description: |
+  The Zvvmtls extension of the Zvvm Integrated Matrix extensions provides the
+  order-preserving tile load `vmtl.v` and tile store `vmts.v`. They transfer
+  2D matrix tiles of SEW-bit elements between memory and vector register
+  groups without a separate repacking step.
+
+  Matrix data in memory is typically stored as a large 2D array in row-major or
+  column-major order, with a leading dimension that may exceed the tile width.
+  `rs1` holds the base address and `rs2` holds the leading dimension in
+  elements. A leading dimension of zero selects LAMBDA × LMUL.
+
+  The tile geometry is selected by SEW, VL, LMUL and lambda. A nonzero
+  immediate lambda field in the instruction overrides `vtype.lambda` for that
+  instruction. An unsupported nonzero immediate lambda raises an
+  illegal-instruction exception and is not clamped.
+
+  Tile loads and stores support masking, and a nonzero `vstart` is legal.
+type: unprivileged
+versions:
+  - version: "0.9.0"
+    # commit: e99d9065 (tag v0.9.0-on-main)
+    state: development
+    repositories:
+      - url: https://github.com/riscv/integrated-matrix-extension
+        branch: main
+requirements:
+  extension:
+    name: Zve32x

@@ -1,0 +1,62 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/param_schema.json
+<%- raise "'sew' must be defined" if sew.nil? -%>
+<%- name = "SUPPORTED_LAMBDA_SEW#{sew}" -%>
+
+$schema: param_schema.json#
+kind: parameter
+name: <%= name %>
+long_name: Lambda values supported when SEW=<%= sew %>
+description: |
+  The nonzero lambda values that the implementation supports for the
+  `vtype.lambda[2:0]` field when SEW=<%= sew %>. SEW is the element width of
+  the C accumulator tile.
+
+  The specification makes the supported set an implementation-defined
+  function of VLEN and SEW. VLEN is fixed by the configuration, so one list
+  per SEW describes the function completely. LMUL does not affect whether a
+  lambda value is supported.
+
+  A lambda value is architecturally permissible only when
+  EMUL_C = VLEN / (SEW × lambda^2^) is in {1, 2, 4, 8, 16}.
+  For every (VLEN, SEW) in the IME-legal configuration domain, at least one
+  permissible value must be supported.
+
+  A `vtype` write of an unsupported nonzero lambda selects the largest
+  supported value that is not greater than the request, or else the smallest
+  supported value. A tile load or store with an unsupported nonzero immediate
+  lambda raises an illegal-instruction exception.
+schema:
+  type: array
+  items:
+    type: integer
+    enum: [1, 2, 4, 8, 16, 32, 64]
+  minItems: 1
+  maxItems: 7
+  uniqueItems: true
+definedBy:
+  extension:
+<%- if sew == 64 -%>
+    allOf:
+      - anyOf:
+          - name: Zvvmm
+          - name: Zvvfmm
+          - name: Zvvmtls
+          - name: Zvvmttls
+      - name: Zve64x
+<%- else -%>
+    anyOf:
+      - name: Zvvmm
+      - name: Zvvfmm
+      - name: Zvvmtls
+      - name: Zvvmttls
+<%- end -%>
+requirements:
+  idl(): |
+<%- [1, 2, 4, 8, 16, 32, 64].each do |lambda| -%>
+    $array_includes?(<%= name %>, <%= lambda %>) -> (VLEN >= <%= sew * lambda * lambda %>) && (VLEN <= <%= 16 * sew * lambda * lambda %>);
+<%- end -%>
+  reason: |
+    Each supported lambda must give EMUL_C = VLEN / (<%= sew %> × lambda^2) in {1, 2, 4, 8, 16}.

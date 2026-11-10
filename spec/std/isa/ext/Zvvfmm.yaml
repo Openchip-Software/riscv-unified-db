@@ -1,0 +1,57 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/ext_schema.json
+
+$schema: "ext_schema.json#"
+kind: extension
+name: Zvvfmm
+long_name: Floating-point matrix multiply-accumulate on vector register groups
+description: |
+  The Zvvfmm family extension of the Zvvm Integrated Matrix extensions provides
+  floating-point matrix multiply-accumulate instructions, computing
+  C ← C + A × B^T^, where A, B, and C are matrix tiles held in vector register
+  groups.
+
+  [cols="4,1,1,1,4", options="header"]
+  |===
+  | Mnemonic | W | A/B element width | C element width | Remark
+
+  | `vfmmacc.vv vd, vs1, vs2`               | 1 | SEW   | SEW | floating-point A/B tiles only
+  | `vfwmmacc.vv vd, vs1, vs2[, v0.scale]`  | 2 | SEW/2 | SEW | floating-point and MX-scaled A/B tiles
+  | `vfqmmacc.vv vd, vs1, vs2[, v0.scale]`  | 4 | SEW/4 | SEW | floating-point and MX-scaled A/B tiles
+  | `vf8wmmacc.vv vd, vs1, vs2[, v0.scale]` | 8 | SEW/8 | SEW | floating-point and MX-scaled A/B tiles
+  | `vfwimmacc.vv vd, vs1, vs2, v0.scale`   | 2 | SEW/2 | SEW | only MX-scaled integer A/B tiles
+  | `vfqimmacc.vv vd, vs1, vs2, v0.scale`   | 4 | SEW/4 | SEW | only MX-scaled integer A/B tiles
+  | `vf8wimmacc.vv vd, vs1, vs2, v0.scale`  | 8 | SEW/8 | SEW | only MX-scaled integer A/B tiles
+  |===
+
+  The `altfmt_A` and `altfmt_B` fields of `vtype` select the format of the A
+  and B input elements, interpreted with the input element width SEW/W. The
+  `altfmt` field defined by Zvfbfa selects the format of the C accumulator
+  elements, interpreted with SEW. The `bs` field selects the microscaling
+  block size when `vm=0`.
+
+  For `vfmmacc.vv`, `vm=0` is reserved. For the other widening instructions,
+  `vm=0` requests microscaled operands whose E8M0 block scales are read from
+  `v0`.
+
+  The input and accumulator types that are legal for each instruction are
+  selected by the individual extensions `Zvvofp4ofp8mm` through `Zvvfp64mm`
+  and by the microscaling extensions `Zvvx*mm` and `Zvvxn*mm`. Each of those
+  extensions requires Zvvfmm. An encoding whose floating-point or integer-MX
+  encoding-map cell names an extension that is not implemented raises an
+  illegal-instruction exception.
+
+  Matrix multiply-accumulate instructions require `vstart` = 0.
+type: unprivileged
+versions:
+  - version: "0.9.0"
+    # commit: e99d9065 (tag v0.9.0-on-main)
+    state: development
+    repositories:
+      - url: https://github.com/riscv/integrated-matrix-extension
+        branch: main
+requirements:
+  extension:
+    name: Zve32f
