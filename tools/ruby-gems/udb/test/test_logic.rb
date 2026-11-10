@@ -151,7 +151,7 @@ class TestLogic < Minitest::Test
 
     assert_equal "(A=1.0.0 AND B=1.0.0 AND C=1.0.0 AND D=1.0.0 AND E=1.0.0 AND F=1.0.0 AND G=1.0.0 AND H=1.0.0)", n.to_s(format: LogicNode::LogicSymbolFormat::English)
     assert_equal "out = (a & b & c & d & e & f & g & h)", n.to_eqntott.eqn
-    assert_equal "(((((((A=1.0.0 AND B=1.0.0) AND C=1.0.0) AND D=1.0.0) AND E=1.0.0) AND F=1.0.0) AND G=1.0.0) AND H=1.0.0)", n.group_by_2.to_s(format: LogicNode::LogicSymbolFormat::English)
+    assert_equal "(((A=1.0.0 AND B=1.0.0) AND (C=1.0.0 AND D=1.0.0)) AND ((E=1.0.0 AND F=1.0.0) AND (G=1.0.0 AND H=1.0.0)))", n.group_by_2.to_s(format: LogicNode::LogicSymbolFormat::English)
   end
 
   sig { void }
@@ -173,7 +173,7 @@ class TestLogic < Minitest::Test
 
     assert_equal "(A=1.0.0 AND B=1.0.0 AND A=1.0.0 AND B=1.0.0 AND A=1.0.0 AND B=1.0.0 AND A=1.0.0 AND B=1.0.0)", n.to_s(format: LogicNode::LogicSymbolFormat::English)
     assert_equal "out = (a & b & a & b & a & b & a & b)", n.to_eqntott.eqn
-    assert_equal "(((((((A=1.0.0 AND B=1.0.0) AND A=1.0.0) AND B=1.0.0) AND A=1.0.0) AND B=1.0.0) AND A=1.0.0) AND B=1.0.0)", n.group_by_2.to_s(format: LogicNode::LogicSymbolFormat::English)
+    assert_equal "(((A=1.0.0 AND B=1.0.0) AND (A=1.0.0 AND B=1.0.0)) AND ((A=1.0.0 AND B=1.0.0) AND (A=1.0.0 AND B=1.0.0)))", n.group_by_2.to_s(format: LogicNode::LogicSymbolFormat::English)
     assert_includes ["(A=1.0.0 AND B=1.0.0)", "(B=1.0.0 AND A=1.0.0)"], n.espresso(LogicNode::CanonicalizationType::SumOfProducts, false).to_s(format: LogicNode::LogicSymbolFormat::English)
     assert n.equivalent?(n.espresso(LogicNode::CanonicalizationType::SumOfProducts, false), cfg_arch)
   end
@@ -197,7 +197,7 @@ class TestLogic < Minitest::Test
 
     assert_equal "(A=1.0.0 OR B=1.0.0 OR A=1.0.0 OR B=1.0.0 OR A=1.0.0 OR B=1.0.0 OR A=1.0.0 OR B=1.0.0)", n.to_s(format: LogicNode::LogicSymbolFormat::English)
     assert_equal "out = (a | b | a | b | a | b | a | b)", n.to_eqntott.eqn
-    assert_equal "(((((((A=1.0.0 OR B=1.0.0) OR A=1.0.0) OR B=1.0.0) OR A=1.0.0) OR B=1.0.0) OR A=1.0.0) OR B=1.0.0)", n.group_by_2.to_s(format: LogicNode::LogicSymbolFormat::English)
+    assert_equal "(((A=1.0.0 OR B=1.0.0) OR (A=1.0.0 OR B=1.0.0)) OR ((A=1.0.0 OR B=1.0.0) OR (A=1.0.0 OR B=1.0.0)))", n.group_by_2.to_s(format: LogicNode::LogicSymbolFormat::English)
     assert_includes ["(A=1.0.0 OR B=1.0.0)", "(B=1.0.0 OR A=1.0.0)"], n.espresso(LogicNode::CanonicalizationType::SumOfProducts, false).to_s(format: LogicNode::LogicSymbolFormat::English)
     assert n.equivalent?(n.espresso(LogicNode::CanonicalizationType::SumOfProducts, false), cfg_arch)
   end
