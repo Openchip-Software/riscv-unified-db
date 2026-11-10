@@ -1,0 +1,77 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../../schemas/inst_schema.json
+
+$schema: "inst_schema.json#"
+kind: instruction
+name: vmttl.v
+long_name: Transposing Matrix Tile Load
+description: |
+  Loads a two-dimensional array of `SEW`-bit storage elements from memory
+  and transposes those storage elements into the vector register-group
+  layout.
+
+  When each logical matrix element occupies one `SEW`-bit storage element,
+  this operation is also a logical matrix transpose. In that case it can be
+  used when a B matrix is stored in row-major order, or when
+  an A or C matrix is stored in column-major order.
+
+  When multiple logical elements are packed within each `SEW`-bit storage
+  element, the instruction transposes the storage elements but does not
+  transpose the packed logical elements within them.
+
+  `xs1` holds the matrix base address; `xs2` holds the leading dimension `LD` in elements of width SEW.
+  If `xs2` holds zero (0), the leading dimension `LD` is set to VLEN / (SEW × LAMBDA),
+  which is the natural maximum width of a B tile and height of an A or C tile.
+  The parameter LAMBDA refers to the result matrix tile of the transposing load operation.
+  When the lambda field is specified, it overrides `lambda[2:0]` from `vtype` for this instruction.
+  Inactive elements (masked off) are left undisturbed in the destination register.
+  Tail elements (index ≥ VL) are left undisturbed in the destination register.
+  The tail-agnostic (`vtype.vta`) and mask-agnostic (`vtype.vma`) fill policies do not apply to tile loads.
+  Neither inactive nor tail elements raise memory exceptions.
+
+  Let _linesize_ = LAMBDA × LMUL.
+  For each element index `i` in the body `[vstart, VL)` where the mask is enabled:
+
+      VD[i] = M[xs1 + (SEW ÷ 8) × ((i % linesize) × LD + (i / linesize))]
+
+  The instruction raises the standard vector memory exceptions for active
+  elements.
+
+  _Illegal Instruction_ is raised if any of the following conditions hold:
+
+  * `vtype.vlmul` does not encode LMUL in {1, 2, 4, 8}.
+  * No effective lambda is selected.
+  * The effective lambda is not supported for the current
+    (`VLEN`, `SEW`) configuration. A nonzero instruction lambda
+    field is checked exactly and is not WARL-clamped.
+  * `VL` is not a multiple of `effective_lambda * LMUL`.
+  * `vd` is not aligned for LMUL, or its register group extends past `v31`.
+  * `vm=0` and the destination register group overlaps `v0`.
+
+  A nonzero `vstart` value is legal and is not an illegal-instruction
+  condition.
+definedBy:
+  extension:
+    name: Zvvmttls
+assembly: vd, (xs1), xs2, lambda, vm
+encoding:
+  match: ---101-----------111-----0000111
+  variables:
+    - name: lambda
+      location: 31-29
+    - name: vm
+      location: 25
+    - name: xs2
+      location: 24-20
+    - name: xs1
+      location: 19-15
+    - name: vd
+      location: 11-7
+access:
+  s: always
+  u: always
+  vs: always
+  vu: always
+data_independent_timing: false
