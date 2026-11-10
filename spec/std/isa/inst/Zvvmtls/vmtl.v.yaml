@@ -66,3 +66,5 @@ access:
   vs: always
   vu: always
 data_independent_timing: false
+operation(): |
+  zvvm_tile_load(lambda, vm, xs1, xs2, vd, false, $encoding);
