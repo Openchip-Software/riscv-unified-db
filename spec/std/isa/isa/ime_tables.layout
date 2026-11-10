@@ -1,0 +1,206 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+%version: 1.0
+<%-
+  # The encoding maps of the Zvvm specification follow one rule: a row names
+  # the extension Zvv<input><accumulator>mm (with an x or xn prefix for
+  # microscaling), and the row is reserved when no such extension exists.
+  # Mixed FP16/BF16 inputs with W=1 name the two single-format extensions.
+  known = IME_TYPE_EXTENSIONS.map { |e| ime_extension_name(e) }
+  exists = ->(exts) { exts.all? { |e| known.include?(e) } ? exts : nil }
+  name = ->(a, c, bs = nil) { ime_extension_name({ a:, c:, bs: }) }
+  fp_input = ->(eew, alt) { { 4 => (alt.zero? ? "ofp4" : nil), 8 => "ofp8", 16 => (alt.zero? ? "fp16" : "bf16"), 32 => "fp32", 64 => "fp64" }[eew] }
+  fp_acc = ->(sew, alt) { { 8 => "ofp8", 16 => (alt.zero? ? "fp16" : "bf16"), 32 => (alt.zero? ? "fp32" : nil), 64 => (alt.zero? ? "fp64" : nil) }.fetch(sew) }
+  bits = [0, 1]
+  geometries = [1, 2, 4, 8].product([8, 16, 32, 64]).select { |w, sew| sew / w >= 4 }
+
+  fp_exts = lambda do |w, sew, aa, ab, alt, bs = nil|
+    ins = [fp_input.(sew / w, aa), fp_input.(sew / w, ab)]
+    c = fp_acc.(sew, alt)
+    next nil if ins.include?(nil) || c.nil?
+    ins = ins.uniq.sort
+    unscaled = (w == 1 && ins.size == 2) ? ins.map { |f| name.(f, f) } : ins.map { |f| name.(f, c) }
+    next nil if exists.(unscaled).nil?
+    next unscaled if bs.nil?
+    next nil if w == 1 || !ins.all? { |f| %w[ofp4 ofp8].include?(f) }
+    exists.(ins.map { |f| name.(f, c, bs) })
+  end
+  int_mx_exts = lambda do |w, sew, aa, ab, alt, bs|
+    c = fp_acc.(sew, alt)
+    next nil if aa != 0 || ab != 0 || c.nil?
+    exists.([name.("i#{sew / w}", c, bs)])
+  end
+  cond = ->(exts) { exts.map { |e| "implemented?(ExtensionName::#{e})" }.join(" && ") }
+-%>
+
+# Zvvm encoding-map legality and floating-point disclosure lookups.
+# Source: https://github.com/riscv/integrated-matrix-extension (tag v0.9.0-on-main)
+
+function zvvm_int_encoding_legal? {
+  returns Boolean
+  arguments
+    U32 w,
+    U32 sew
+  description {
+    Return true if the integer encoding map makes an ordinary (vm=1) integer
+    multiply-accumulate with widening factor +w+ and SEW = +sew+ legal
+    (specification `check_int_encoding_legality`). The row depends only on W
+    and SEW, because altfmt_A and altfmt_B select signedness in every row.
+  }
+  body {
+<%- geometries.each do |w, sew| -%>
+<%-   exts = exists.([name.("i#{sew / w}", "i#{sew}")]) -%>
+<%-   next if exts.nil? -%>
+    if ((w == <%= w %>) && (sew == <%= sew %>)) {
+      return <%= cond.(exts) %>;
+    }
+<%- end -%>
+    return false;
+  }
+}
+
+function zvvm_fp_encoding_legal? {
+  returns Boolean
+  arguments
+    U32 w,
+    U32 sew,
+    Bits<1> alt_a,
+    Bits<1> alt_b,
+    Bits<1> alt
+  description {
+    Return true if the floating-point encoding map makes an ordinary (vm=1)
+    floating-point multiply-accumulate legal (specification
+    `check_fp_encoding_legality`). +alt_a+, +alt_b+ and +alt+ are vtype.ALTFMTA,
+    vtype.ALTFMTB and vtype.ALTFMT.
+  }
+  body {
+<%- geometries.product(bits, bits, bits).each do |(w, sew), aa, ab, alt| -%>
+<%-   exts = fp_exts.(w, sew, aa, ab, alt) -%>
+<%-   next if exts.nil? -%>
+    if ((w == <%= w %>) && (sew == <%= sew %>) && (alt_a == <%= aa %>) && (alt_b == <%= ab %>) && (alt == <%= alt %>)) {
+      return <%= cond.(exts) %>;
+    }
+<%- end -%>
+    return false;
+  }
+}
+
+function zvvm_fp_mx_encoding_legal? {
+  returns Boolean
+  arguments
+    U32 w,
+    U32 sew,
+    Bits<1> alt_a,
+    Bits<1> alt_b,
+    Bits<1> alt,
+    Bits<1> bs
+  description {
+    Return true if the block-size cells of the floating-point encoding map make
+    a microscaled (vm=0) floating-point multiply-accumulate legal
+    (specification `check_fp_mx_encoding_legality`). +bs+ is vtype.BS.
+  }
+  body {
+<%- geometries.product(bits, bits, bits, bits).each do |(w, sew), aa, ab, alt, bs| -%>
+<%-   exts = fp_exts.(w, sew, aa, ab, alt, bs.zero? ? 32 : 16) -%>
+<%-   next if exts.nil? -%>
+    if ((w == <%= w %>) && (sew == <%= sew %>) && (alt_a == <%= aa %>) && (alt_b == <%= ab %>) && (alt == <%= alt %>) && (bs == <%= bs %>)) {
+      return <%= cond.(exts) %>;
+    }
+<%- end -%>
+    return false;
+  }
+}
+
+function zvvm_int_mx_encoding_legal? {
+  returns Boolean
+  arguments
+    U32 w,
+    U32 sew,
+    Bits<1> alt_a,
+    Bits<1> alt_b,
+    Bits<1> alt,
+    Bits<1> bs
+  description {
+    Return true if the integer MX encoding map makes an integer-input
+    microscaled multiply-accumulate legal (specification
+    `check_int_mx_encoding_legality`). MXINT inputs are signed, so a row with
+    +alt_a+ or +alt_b+ set is reserved.
+  }
+  body {
+<%- geometries.product(bits, bits, bits, bits).each do |(w, sew), aa, ab, alt, bs| -%>
+<%-   exts = int_mx_exts.(w, sew, aa, ab, alt, bs.zero? ? 32 : 16) -%>
+<%-   next if exts.nil? -%>
+    if ((w == <%= w %>) && (sew == <%= sew %>) && (alt_a == <%= aa %>) && (alt_b == <%= ab %>) && (alt == <%= alt %>) && (bs == <%= bs %>)) {
+      return <%= cond.(exts) %>;
+    }
+<%- end -%>
+    return false;
+  }
+}
+
+function zvvm_fp_grouping {
+  returns U32
+  arguments
+    U32 sew,
+    U32 w,
+    Bits<3> lambda_enc
+  description {
+    Return the disclosed grouping factor G for (+sew+, +w+, lambda), where
+    +lambda_enc+ is the nonzero vtype.LAMBDA encoding (specification
+    `get_fp_grouping`).
+  }
+  body {
+<%- IME_FP_GEOMETRIES.each do |(sew, w), exts| -%>
+    if ((sew == <%= sew %>) && (w == <%= w %>) && (<%= exts.map { |e| "implemented?(ExtensionName::#{e})" }.join(" || ") %>)) {
+      return ZVVM_FP_GROUPING_SEW<%= sew %>_W<%= w %>[lambda_enc - 1];
+    }
+<%- end -%>
+    return 0;
+  }
+}
+
+function zvvm_fp_psm? {
+  returns Boolean
+  arguments
+    U32 sew,
+    U32 w,
+    Bits<3> lambda_enc
+  description {
+    Return the disclosed partial-sum mode for (+sew+, +w+, lambda): false for
+    psm=0 and true for psm=1 (specification `get_fp_psm`).
+  }
+  body {
+<%- IME_FP_GEOMETRIES.each do |(sew, w), exts| -%>
+    if ((sew == <%= sew %>) && (w == <%= w %>) && (<%= exts.map { |e| "implemented?(ExtensionName::#{e})" }.join(" || ") %>)) {
+      return ZVVM_FP_PSM_SEW<%= sew %>_W<%= w %>[lambda_enc - 1];
+    }
+<%- end -%>
+    return false;
+  }
+}
+
+function zvvm_fp_rnd {
+  returns Bits<2>
+  arguments
+    U32 sew,
+    U32 w,
+    Bits<3> lambda_enc
+  description {
+    Return the disclosed group rounding for (+sew+, +w+, lambda): 0 for frm,
+    1 for rto and 2 for xct (specification `get_fp_rnd`).
+  }
+  body {
+<%- IME_FP_GEOMETRIES.each do |(sew, w), exts| -%>
+    if ((sew == <%= sew %>) && (w == <%= w %>) && (<%= exts.map { |e| "implemented?(ExtensionName::#{e})" }.join(" || ") %>)) {
+      if (ZVVM_FP_RND_SEW<%= sew %>_W<%= w %>[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW<%= sew %>_W<%= w %>[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+<%- end -%>
+    return 0;
+  }
+}

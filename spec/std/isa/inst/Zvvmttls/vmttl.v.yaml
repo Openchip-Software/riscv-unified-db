@@ -75,3 +75,22 @@ access:
   vs: always
   vu: always
 data_independent_timing: false
+operation(): |
+  ZvvmTileGeom t = zvvm_decode_tile_geometry(lambda, $encoding);
+  zvvm_check_reg_group(vd, t.lmul, $encoding);
+  if ((vm == 0) && (vd == 0)) {
+    raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
+  }
+  XReg ld = X[xs2];
+  if (ld == 0) {
+    ld = t.epr / t.lambda;
+  }
+  for (U32 i = CSR[vstart].VALUE; i < t.num_elem; i++) {
+    if ((vm == 1) || (V[0][i:i] == 1)) {
+      CSR[vstart].VALUE = i;
+      U32 flat = zvvm_tile_reg_idx(i, t.lmul, t.lambda, t.epr);
+      XReg byte_off = (((i % t.linesize) * ld) + (i / t.linesize)) * (t.eew / 8);
+      zvvm_write_elem(t.eew, flat, vd, zvvm_load_elem(t.eew, X[xs1] + byte_off, $encoding));
+    }
+  }
+  CSR[vstart].VALUE = 0;

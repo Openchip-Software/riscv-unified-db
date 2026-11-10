@@ -10,6 +10,7 @@ include "util.idl"
 include "fp.idl"
 include "vec.idl"
 include "ime.idl"
+include "ime_tables.idl"
 
 # global state
 

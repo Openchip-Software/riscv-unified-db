@@ -34,7 +34,7 @@ function zvvm_lambda_supported? {
     if (lambda_enc == 0) {
       return false;
     }
-    Bits<7> lambda = 7'b1 << (lambda_enc - 1);
+    Bits<7> lambda = (7'b1 << lambda_enc) >> 1;
     if (sew == 8) {
       return $array_includes?(SUPPORTED_LAMBDA_SEW8, lambda);
     } else if (sew == 16) {
@@ -142,5 +142,464 @@ function zvvm_reselect_lambda {
       VectorState state = vector_state();
       CSR[vtype].LAMBDA = zvvm_select_lambda(3'b0, CSR[vtype].LAMBDA, state.sew);
     }
+  }
+}
+
+# ─── Geometry and register-group helpers ─────────────────────────────────
+# These follow the shared pseudocode helpers of the specification; each
+# function names the specification helper it implements.
+
+function zvvm_lmul {
+  returns U32
+  arguments
+    Bits<INSTR_ENC_SIZE> encoding
+  description {
+    Return LMUL for a Zvvm instruction (specification `decode_ime_lmul`).
+    Zvvm permits only LMUL = 1, 2, 4 or 8; a fractional LMUL raises an
+    illegal-instruction exception.
+  }
+  body {
+    VectorState state = vector_state();
+    if (state.lmul_type == VectorLmulType::Divide) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    return 32'b1 << state.log2_lmul;
+  }
+}
+
+function zvvm_check_reg_group {
+  arguments
+    Bits<5> base,
+    U32 regs,
+    Bits<INSTR_ENC_SIZE> encoding
+  description {
+    Raise an illegal-instruction exception unless the register group of +regs+
+    registers starting at +base+ is aligned and ends at or before v31
+    (specification `check_ime_reg_group`).
+  }
+  body {
+    if ((($bits(base) % regs) != 0) || (($bits(base) + regs) > 32)) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+  }
+}
+
+function zvvm_reg_groups_overlap? {
+  returns Boolean
+  arguments
+    Bits<5> base_a,
+    U32 regs_a,
+    Bits<5> base_b,
+    U32 regs_b
+  description {
+    Return true if the register groups [base_a, base_a + regs_a) and
+    [base_b, base_b + regs_b) share a register
+    (specification `ime_reg_groups_overlap`).
+  }
+  body {
+    U32 a0 = base_a;
+    U32 b0 = base_b;
+    return !(((a0 + regs_a) <= b0) || ((b0 + regs_b) <= a0));
+  }
+}
+
+function zvvm_tile_reg_idx {
+  returns U32
+  arguments
+    U32 i,
+    U32 group_regs,
+    U32 row_elems_per_reg,
+    U32 elems_per_reg
+  description {
+    Map the sequential tile element index +i+ to the flat register-group element
+    index (specification `tile_reg_idx`). +row_elems_per_reg+ is the number of
+    consecutive elements of one tile row held in one register, and +group_regs+
+    is the number of registers in the group.
+  }
+  body {
+    U32 linesize = row_elems_per_reg * group_regs;
+    U32 line = i / linesize;
+    U32 elem_in_line = i % linesize;
+    U32 regoff = elem_in_line / row_elems_per_reg;
+    U32 elementoff = (line * row_elems_per_reg) + (elem_in_line % row_elems_per_reg);
+    return (regoff * elems_per_reg) + elementoff;
+  }
+}
+
+function zvvm_read_elem {
+  returns Bits<64>
+  arguments
+    U32 eew,
+    U32 flat,
+    Bits<5> base
+  description {
+    Return element +flat+ of width +eew+ of the register group starting at
+    +base+, zero-extended (specification `read_single_element`). Element +flat+
+    is element (flat mod VLEN/eew) of register base + flat / (VLEN/eew).
+  }
+  body {
+    U32 epr = VLEN / eew;
+    Bits<5> reg = base + (flat / epr);
+    U32 lo = (flat % epr) * eew;
+    return V[reg][lo + eew - 1:lo];
+  }
+}
+
+function zvvm_write_elem {
+  arguments
+    U32 eew,
+    U32 flat,
+    Bits<5> base,
+    Bits<64> value
+  description {
+    Write the low +eew+ bits of +value+ to element +flat+ of the register group
+    starting at +base+ (specification `write_single_element`).
+  }
+  body {
+    U32 epr = VLEN / eew;
+    Bits<5> reg = base + (flat / epr);
+    U32 lo = (flat % epr) * eew;
+    V[reg][lo + eew - 1:lo] = value;
+  }
+}
+
+function zvvm_extend {
+  returns Bits<64>
+  arguments
+    Bits<64> value,
+    U32 eew,
+    Boolean is_signed
+  description {
+    Extend the +eew+-bit integer in the low bits of +value+ to 64 bits, by sign
+    extension when +is_signed+ is true and by zero extension otherwise.
+  }
+  body {
+    if (is_signed && (eew < 64) && (((value >> (eew - 1)) & 1) == 1)) {
+      return value | ({64{1'b1}} << eew);
+    }
+    return value;
+  }
+}
+
+function zvvm_load_elem {
+  returns Bits<64>
+  arguments
+    U32 eew,
+    XReg virtual_address,
+    Bits<INSTR_ENC_SIZE> encoding
+  description {
+    Load one +eew+-bit element from memory.
+  }
+  body {
+    if (eew == 8) {
+      return read_memory(8, virtual_address, encoding);
+    } else if (eew == 16) {
+      return read_memory(16, virtual_address, encoding);
+    } else if (eew == 32) {
+      return read_memory(32, virtual_address, encoding);
+    }
+    return read_memory(64, virtual_address, encoding);
+  }
+}
+
+function zvvm_store_elem {
+  arguments
+    U32 eew,
+    XReg virtual_address,
+    Bits<64> value,
+    Bits<INSTR_ENC_SIZE> encoding
+  description {
+    Store the low +eew+ bits of +value+ to memory.
+  }
+  body {
+    if (eew == 8) {
+      write_memory(8, virtual_address, value, encoding);
+    } else if (eew == 16) {
+      write_memory(16, virtual_address, value, encoding);
+    } else if (eew == 32) {
+      write_memory(32, virtual_address, value, encoding);
+    } else {
+      write_memory(64, virtual_address, value, encoding);
+    }
+  }
+}
+
+# ─── Tile load and store ─────────────────────────────────────────────────
+
+struct ZvvmTileGeom {
+  U32 eew;       # storage element width (= SEW)
+  U32 lmul;      # register-group multiplier
+  U32 lambda;    # effective lambda
+  U32 linesize;  # lambda * LMUL
+  U32 epr;       # elements per register at eew
+  U32 num_elem;  # VL
+}
+
+function zvvm_decode_tile_geometry {
+  returns ZvvmTileGeom
+  arguments
+    Bits<3> lambda_enc,
+    Bits<INSTR_ENC_SIZE> encoding
+  description {
+    Decode the geometry of a tile load or store (specification
+    `decode_tile_ls_geometry`). A nonzero +lambda_enc+ from the instruction
+    selects lambda exactly; zero selects vtype.LAMBDA. An unsupported lambda,
+    no selected lambda, or a VL that is not a multiple of lambda * LMUL raises
+    an illegal-instruction exception.
+  }
+  body {
+    if (CSR[vtype].VILL == 1) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    VectorState state = vector_state();
+    Bits<3> enc = (lambda_enc != 0) ? lambda_enc : CSR[vtype].LAMBDA;
+    if (!zvvm_lambda_supported?(state.sew, enc)) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+
+    # Check the values in locals before filling the struct. The type checker
+    # folded a check on a struct field set at run time as if it were still zero.
+    U32 lmul = zvvm_lmul(encoding);
+    U32 lambda = (32'b1 << enc) >> 1;
+    U32 linesize = lambda * lmul;
+    if ((CSR[vl].VALUE % linesize) != 0) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+
+    ZvvmTileGeom t;
+    t.eew = state.sew;
+    t.lmul = lmul;
+    t.lambda = lambda;
+    t.linesize = linesize;
+    t.epr = VLEN / state.sew;
+    t.num_elem = CSR[vl].VALUE;
+    return t;
+  }
+}
+
+# ─── Matrix multiply-accumulate ──────────────────────────────────────────
+
+struct ZvvmGemmGeom {
+  U32 eew_c;   # accumulator element width (= SEW)
+  U32 eew_a;   # input element width (= SEW / W)
+  U32 w;       # widening factor
+  U32 lmul;    # register-group multiplier
+  U32 lambda;  # lambda from vtype
+  U32 k_eff;   # effective K dimension (= lambda * W * LMUL)
+  U32 m;       # rows of the A and C tiles
+  U32 n;       # active columns of B^T and C (from VL)
+  U32 n_max;   # physical columns of the C tile (= M)
+  U32 emul_c;  # registers in the C group
+  U32 epr_a;   # elements per register at eew_a
+  U32 epr_c;   # elements per register at eew_c
+}
+
+function zvvm_decode_gemm_geometry {
+  returns ZvvmGemmGeom
+  arguments
+    U32 w,
+    Bits<INSTR_ENC_SIZE> encoding
+  description {
+    Decode the tile geometry of a matrix multiply-accumulate with widening
+    factor +w+ (specification `decode_gemm_geometry`). Input elements narrower
+    than 4 bits, no selected or an unsupported lambda, a VL that is not a
+    multiple of lambda * LMUL, more than M active columns, or an EMUL_C other than
+    1, 2, 4, 8 or 16 raise an illegal-instruction exception.
+  }
+  body {
+    if (CSR[vtype].VILL == 1) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    VectorState state = vector_state();
+    # Check the values in locals before filling the struct. The type checker
+    # folded a check on a struct field set at run time as if it were still zero.
+    U32 eew_c = state.sew;
+    U32 eew_a = eew_c / w;
+    if (eew_a < 4) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    U32 lmul = zvvm_lmul(encoding);
+    if (!zvvm_lambda_supported?(state.sew, CSR[vtype].LAMBDA)) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    U32 lambda = (32'b1 << CSR[vtype].LAMBDA) >> 1;
+    U32 k_eff = lambda * w * lmul;
+    U32 vl_div = lambda * lmul;
+    U32 n = CSR[vl].VALUE / vl_div;
+    U32 m = ((lmul * VLEN) / eew_a) / k_eff;
+    U32 emul_c = m / lambda;
+    if (((CSR[vl].VALUE % vl_div) != 0) || (n > m) ||
+        !((emul_c == 1) || (emul_c == 2) || (emul_c == 4) || (emul_c == 8) || (emul_c == 16))) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+
+    ZvvmGemmGeom g;
+    g.w = w;
+    g.eew_c = eew_c;
+    g.eew_a = eew_a;
+    g.lmul = lmul;
+    g.lambda = lambda;
+    g.k_eff = k_eff;
+    g.m = m;
+    g.n = n;
+    g.n_max = m;
+    g.emul_c = emul_c;
+    g.epr_a = VLEN / eew_a;
+    g.epr_c = VLEN / eew_c;
+    return g;
+  }
+}
+
+function zvvm_check_gemm_reg_groups {
+  arguments
+    ZvvmGemmGeom g,
+    Bits<5> vs1,
+    Bits<5> vs2,
+    Bits<5> vd,
+    Bits<INSTR_ENC_SIZE> encoding
+  description {
+    Check alignment, bounds and overlap of the A (+vs1+), B (+vs2+) and C (+vd+)
+    register groups (specification `check_gemm_reg_groups`). The A and B groups
+    may overlap each other; the C group shall not overlap either.
+  }
+  body {
+    zvvm_check_reg_group(vs1, g.lmul, encoding);
+    zvvm_check_reg_group(vs2, g.lmul, encoding);
+    zvvm_check_reg_group(vd, g.emul_c, encoding);
+    if (zvvm_reg_groups_overlap?(vd, g.emul_c, vs1, g.lmul) ||
+        zvvm_reg_groups_overlap?(vd, g.emul_c, vs2, g.lmul)) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+  }
+}
+
+function zvvm_check_microscaling {
+  arguments
+    ZvvmGemmGeom g,
+    Bits<5> vs1,
+    Bits<5> vs2,
+    Bits<5> vd,
+    Bits<INSTR_ENC_SIZE> encoding
+  description {
+    Check the extra constraints of a microscaled (vm=0) multiply-accumulate
+    (specification `check_microscaling_legality`). With E8M0 scales the scale
+    pair is 16 bits wide, so SEW * lambda must be at least 16. With block size
+    16 (vtype.BS = 1), W * LMUL must not exceed SEW. No operand group may
+    overlap v0, which holds the scales.
+  }
+  body {
+    if ((g.eew_c * g.lambda) < 16) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    if ((CSR[vtype].BS == 1) && ((g.w * g.lmul) > g.eew_c)) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    if (zvvm_reg_groups_overlap?(vd, g.emul_c, 0, 1) ||
+        zvvm_reg_groups_overlap?(vs1, g.lmul, 0, 1) ||
+        zvvm_reg_groups_overlap?(vs2, g.lmul, 0, 1)) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+  }
+}
+
+function zvvm_int_gemm {
+  arguments
+    ZvvmGemmGeom g,
+    Boolean signed_a,
+    Boolean signed_b,
+    Bits<5> vs1,
+    Bits<5> vs2,
+    Bits<5> vd
+  description {
+    C += A x B^T^ on integer tiles (specification `int_gemm`). A is read from
+    +vs1+, B from +vs2+, and C from and to +vd+. Accumulation is modular in the
+    C element width, so a 64-bit modular sum gives the exact low bits.
+    C tile tail columns (j >= N) are not written.
+  }
+  body {
+    for (U32 j = 0; j < g.n; j++) {
+      for (U32 i = 0; i < g.m; i++) {
+        U32 c_flat = zvvm_tile_reg_idx((i * g.n_max) + j, g.emul_c, g.lambda, g.epr_c);
+        Bits<64> acc = zvvm_read_elem(g.eew_c, c_flat, vd);
+        for (U32 k = 0; k < g.k_eff; k++) {
+          U32 a_flat = zvvm_tile_reg_idx((i * g.k_eff) + k, g.lmul, g.lambda * g.w, g.epr_a);
+          U32 b_flat = zvvm_tile_reg_idx((j * g.k_eff) + k, g.lmul, g.lambda * g.w, g.epr_a);
+          Bits<64> a = zvvm_extend(zvvm_read_elem(g.eew_a, a_flat, vs1), g.eew_a, signed_a);
+          Bits<64> b = zvvm_extend(zvvm_read_elem(g.eew_a, b_flat, vs2), g.eew_a, signed_b);
+          acc = acc + (a * b);
+        }
+        zvvm_write_elem(g.eew_c, c_flat, vd, acc);
+      }
+    }
+  }
+}
+
+# The floating-point and microscaled arithmetic is supplied by the hart through
+# the builtins below. The alternative is IDL bodies for the specification's
+# fp_gemm, fp_scaled_gemm and int_scaled_gemm. They need exact OFP4, OFP8, BF16,
+# FP16 and FP64 arithmetic with round-to-odd, which fp.idl lacks, and the psm=1
+# reduction is implementation-defined. An empty operation() would be a no-op.
+
+builtin function zvvm_fp_gemm {
+  arguments
+    U32 w,
+    U32 lambda,
+    U32 lmul,
+    Bits<5> vs1,
+    Bits<5> vs2,
+    Bits<5> vd,
+    U32 grouping,
+    Boolean psm,
+    Bits<2> rnd
+  description {
+    C += A x B^T^ on floating-point tiles, as the specification helper
+    `fp_gemm` defines, for the geometry given by +w+, +lambda+, LMUL = +lmul+,
+    SEW, VLEN and VL. A is read from +vs1+, B from +vs2+, and C from and to +vd+.
+
+    The A and B formats come from vtype.ALTFMTA and vtype.ALTFMTB with the
+    input element width SEW / +w+; the C format comes from vtype.ALTFMT with
+    SEW. Final accumulation rounds with the rounding mode in frm, and exception
+    flags accrue in fflags.
+
+    +grouping+ (G), +psm+ and +rnd+ are the disclosed values for this
+    (SEW, W, lambda): +rnd+ is 0 for frm, 1 for rto and 2 for xct. With +psm+
+    true, each group is reduced by the algorithm in ZVVM_FP_PSM1_ALGORITHM.
+  }
+}
+
+builtin function zvvm_fp_scaled_gemm {
+  arguments
+    U32 w,
+    U32 lambda,
+    U32 lmul,
+    Bits<5> vs1,
+    Bits<5> vs2,
+    Bits<5> vd,
+    U32 grouping,
+    Boolean psm,
+    Bits<2> rnd
+  description {
+    C += scale_A x scale_B x (A x B^T^) on microscaled floating-point tiles,
+    as the specification helper `fp_scaled_gemm` defines. The arguments are
+    those of zvvm_fp_gemm. The E8M0 block-scale pairs are read from v0, and
+    vtype.BS selects block size 32 (0) or 16 (1).
+  }
+}
+
+builtin function zvvm_int_scaled_gemm {
+  arguments
+    U32 w,
+    U32 lambda,
+    U32 lmul,
+    Bits<5> vs1,
+    Bits<5> vs2,
+    Bits<5> vd
+  description {
+    C += scale_A x scale_B x (A x B^T^) with signed integer A and B tiles and a
+    floating-point C tile, as the specification helper `int_scaled_gemm`
+    defines. Each block dot product is exact; it is converted to the C format,
+    scaled and accumulated with the rounding mode in frm. The E8M0 block-scale
+    pairs are read from v0, vtype.BS selects the block size, and vtype.ALTFMT
+    selects the C format.
   }
 }
