@@ -1,0 +1,146 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+%version: 1.0
+
+# Shared functions for the Zvvm (Integrated Matrix) extensions.
+# Source: https://github.com/riscv/integrated-matrix-extension (tag v0.9.0-on-main)
+
+function zvvm_implemented? {
+  returns Boolean
+  description {
+    Return true if any Zvvm family extension is implemented.
+    The Zvvm fields of vtype exist exactly when this is true.
+  }
+  body {
+    return implemented?(ExtensionName::Zvvmm) ||
+           implemented?(ExtensionName::Zvvfmm) ||
+           implemented?(ExtensionName::Zvvmtls) ||
+           implemented?(ExtensionName::Zvvmttls);
+  }
+}
+
+function zvvm_lambda_supported? {
+  returns Boolean
+  arguments
+    Bits<7> sew,
+    Bits<3> lambda_enc
+  description {
+    Return true if the nonzero lambda encoding +lambda_enc+ is supported
+    for element width +sew+, according to the SUPPORTED_LAMBDA_SEW<n> parameters.
+    Encoding n (n > 0) selects lambda = 2^(n-1)^.
+  }
+  body {
+    if (lambda_enc == 0) {
+      return false;
+    }
+    Bits<7> lambda = 7'b1 << (lambda_enc - 1);
+    if (sew == 8) {
+      return $array_includes?(SUPPORTED_LAMBDA_SEW8, lambda);
+    } else if (sew == 16) {
+      return $array_includes?(SUPPORTED_LAMBDA_SEW16, lambda);
+    } else if (sew == 32) {
+      return $array_includes?(SUPPORTED_LAMBDA_SEW32, lambda);
+    } else if ((sew == 64) && implemented?(ExtensionName::Zve64x)) {
+      return $array_includes?(SUPPORTED_LAMBDA_SEW64, lambda);
+    }
+    return false;
+  }
+}
+
+function zvvm_select_lambda {
+  returns Bits<3>
+  arguments
+    Bits<3> request,
+    Bits<3> current,
+    Bits<7> sew
+  description {
+    Return the vtype.LAMBDA encoding that a configuration instruction selects
+    for element width +sew+.
+
+    A +request+ of zero keeps +current+ if it is supported, and otherwise selects
+    the largest supported value.
+
+    A nonzero +request+ selects the requested value if it is supported. Otherwise
+    it selects the largest supported value below the request, or else the
+    smallest supported value.
+
+    The result is zero only when no lambda is supported for +sew+, which is the
+    case outside the IME-legal configuration domain.
+  }
+  body {
+    Bits<3> smallest = 0;
+    Bits<3> largest = 0;
+    Bits<3> below_request = 0;
+    for (U32 enc = 1; enc <= 7; enc++) {
+      if (zvvm_lambda_supported?(sew, enc)) {
+        if (smallest == 0) {
+          smallest = enc;
+        }
+        largest = enc;
+        if (enc < request) {
+          below_request = enc;
+        }
+      }
+    }
+
+    if (request == 0) {
+      return zvvm_lambda_supported?(sew, current) ? current : largest;
+    } else if (zvvm_lambda_supported?(sew, request)) {
+      return request;
+    } else if (below_request != 0) {
+      return below_request;
+    }
+    return smallest;
+  }
+}
+
+function zvvm_clear_vtype {
+  description {
+    Clear the Zvvm fields of vtype, as required when VILL is set.
+  }
+  body {
+    if (zvvm_implemented?()) {
+      CSR[vtype].LAMBDA = 0;
+      CSR[vtype].BS = 0;
+      CSR[vtype].ALTFMTA = 0;
+      CSR[vtype].ALTFMTB = 0;
+    }
+  }
+}
+
+function zvvm_write_vtype {
+  arguments
+    XReg new_vtype
+  description {
+    Write the Zvvm fields of vtype from the full vtype value +new_vtype+, as done by vsetvl.
+    BS, ALTFMTA and ALTFMTB are written as supplied.
+    The lambda request in +new_vtype+ is resolved with zvvm_select_lambda.
+    Must be called after VSEW is written.
+  }
+  body {
+    if (zvvm_implemented?()) {
+      # vtype[XLEN-2:XLEN-4] = lambda, [XLEN-5] = bs, [XLEN-6] = altfmt_A, [XLEN-7] = altfmt_B
+      XReg ime_bits = new_vtype >> (xlen() - 7);
+      VectorState state = vector_state();
+      CSR[vtype].LAMBDA = zvvm_select_lambda(ime_bits[5:3], CSR[vtype].LAMBDA, state.sew);
+      CSR[vtype].BS = ime_bits[2];
+      CSR[vtype].ALTFMTA = ime_bits[1];
+      CSR[vtype].ALTFMTB = ime_bits[0];
+    }
+  }
+}
+
+function zvvm_reselect_lambda {
+  description {
+    Re-evaluate vtype.LAMBDA against the current SEW, as done by vsetvli and vsetivli.
+    BS, ALTFMTA and ALTFMTB keep their values.
+    Must be called after VSEW is written.
+  }
+  body {
+    if (zvvm_implemented?()) {
+      VectorState state = vector_state();
+      CSR[vtype].LAMBDA = zvvm_select_lambda(3'b0, CSR[vtype].LAMBDA, state.sew);
+    }
+  }
+}
