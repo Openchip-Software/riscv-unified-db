@@ -2239,54 +2239,30 @@ module Udb
       end
     end
 
+    # Combine +children+ with the binary operator +type+ as a balanced tree.
+    # A left-leaning chain would nest one level per child, and the recursive
+    # CNF code would overflow the stack for conjunctions of a few thousand terms.
+    sig { params(type: LogicNodeType, children: T::Array[LogicNode]).returns(LogicNode).checked(:never) }
+    def group_balanced(type, children)
+      return children.fetch(0) if children.size == 1
+
+      mid = children.size / 2
+      LogicNode.new(type, [group_balanced(type, T.must(children[0...mid])), group_balanced(type, T.must(children[mid..]))])
+    end
+    private :group_balanced
+
     # rewrite so that each node has at most two children
     #
     # @example
-    #   (A || B || C) => ((A || B) || C)
+    #   (A || B || C || D) => ((A || B) || (C || D))
     sig { params(node: LogicNode).returns(LogicNode).checked(:never) }
     def do_group_by_2(node)
       t = node.type
       case t
       when LogicNodeType::And
-        root =
-          LogicNode.new(
-            LogicNodeType::And,
-            [
-              do_group_by_2(node.node_children.fetch(0)),
-              do_group_by_2(node.node_children.fetch(1))
-            ]
-          )
-        (2...node.children.size).each do |i|
-          root =
-            LogicNode.new(
-              LogicNodeType::And,
-              [
-                root,
-                do_group_by_2(node.node_children.fetch(i))
-              ]
-            )
-        end
-        root
+        group_balanced(LogicNodeType::And, node.node_children.map { |child| do_group_by_2(child) })
       when LogicNodeType::Or
-        root =
-          LogicNode.new(
-            LogicNodeType::Or,
-            [
-              do_group_by_2(node.node_children.fetch(0)),
-              do_group_by_2(node.node_children.fetch(1))
-            ]
-          )
-        (2...node.children.size).each do |i|
-          root =
-            LogicNode.new(
-              LogicNodeType::Or,
-              [
-                root,
-                do_group_by_2(node.node_children.fetch(i))
-              ]
-            )
-        end
-        root
+        group_balanced(LogicNodeType::Or, node.node_children.map { |child| do_group_by_2(child) })
       when LogicNodeType::Xor
         # XOR is not distributive, so we need to conver this to AND/OR and then group_by_2
         do_group_by_2(do_nnf(node))
