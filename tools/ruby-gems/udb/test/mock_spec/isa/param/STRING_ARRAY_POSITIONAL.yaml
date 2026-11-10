@@ -1,0 +1,20 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../../schemas/param_schema.json
+
+$schema: param_schema.json#
+kind: parameter
+name: STRING_ARRAY_POSITIONAL
+long_name: Fixed-length string array
+definedBy:
+  extension:
+    name: A
+description: A fixed-length string array whose element positions are compared in conditions.
+schema:
+  type: array
+  items:
+    type: string
+    enum: [none, frm, xct]
+  maxItems: 4
+  minItems: 4
