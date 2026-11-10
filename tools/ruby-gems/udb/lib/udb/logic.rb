@@ -431,25 +431,28 @@ module Udb
         msb, lsb = @yaml.fetch("range").split("-").map(&:to_i)
         e = T.cast(e, Z3ParameterTerm).extract(msb, lsb)
       end
+      # An element of a string array is a Z3 integer holding the hash of the
+      # string, so a string constant compared with it is hashed the same way.
+      z3_const = ->(v) { (v.is_a?(String) && e.is_a?(Z3::Expr)) ? v.hash : v }
       case t
       when ParameterComparisonType::Equal
-        e == @yaml["equal"]
+        e == z3_const.call(@yaml["equal"])
       when ParameterComparisonType::NotEqual
-        e != @yaml["notEqual"]
+        e != z3_const.call(@yaml["notEqual"])
       when ParameterComparisonType::LessThan
-        T.cast(e, T.any(Z3ParameterTerm, Z3::BitvecExpr, Z3::IntExpr)) < @yaml["lessThan"]
+        e.is_a?(Z3::BitvecExpr) ? e.unsigned_lt(@yaml["lessThan"]) : T.cast(e, T.any(Z3ParameterTerm, Z3::IntExpr)) < @yaml["lessThan"]
       when ParameterComparisonType::GreaterThan
-        T.cast(e, T.any(Z3ParameterTerm, Z3::BitvecExpr, Z3::IntExpr)) > @yaml["greaterThan"]
+        e.is_a?(Z3::BitvecExpr) ? e.unsigned_gt(@yaml["greaterThan"]) : T.cast(e, T.any(Z3ParameterTerm, Z3::IntExpr)) > @yaml["greaterThan"]
       when ParameterComparisonType::LessThanOrEqual
-        T.cast(e, T.any(Z3ParameterTerm, Z3::BitvecExpr, Z3::IntExpr)) <= @yaml["lessThanOrEqual"]
+        e.is_a?(Z3::BitvecExpr) ? e.unsigned_le(@yaml["lessThanOrEqual"]) : T.cast(e, T.any(Z3ParameterTerm, Z3::IntExpr)) <= @yaml["lessThanOrEqual"]
       when ParameterComparisonType::GreaterThanOrEqual
-        T.cast(e, T.any(Z3ParameterTerm, Z3::BitvecExpr, Z3::IntExpr)) >= @yaml["greaterThanOrEqual"]
+        e.is_a?(Z3::BitvecExpr) ? e.unsigned_ge(@yaml["greaterThanOrEqual"]) : T.cast(e, T.any(Z3ParameterTerm, Z3::IntExpr)) >= @yaml["greaterThanOrEqual"]
       when ParameterComparisonType::Includes
         T.cast(e, Z3ParameterTerm).has_value?(@yaml["includes"])
       when ParameterComparisonType::OneOf
-        expr = e == @yaml["oneOf"][0]
+        expr = e == z3_const.call(@yaml["oneOf"][0])
         @yaml["oneOf"][1..].each do |v|
-          expr = expr | (e == v)
+          expr = expr | (e == z3_const.call(v))
         end
         expr
       else
