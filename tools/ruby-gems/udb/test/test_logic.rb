@@ -314,6 +314,34 @@ class TestLogic < Minitest::Test
     assert_raises { term.eval_value(5) }
   end
 
+  # An element of an integer array is a Z3 bit vector, so ordering comparisons
+  # on it must use the unsigned bit-vector predicates.
+  def test_array_param_term_ordering_to_z3
+    solver = Udb::Z3Solver.new
+    le = ParameterTerm.new({ "name" => "INT_ARRAY_POSITIONAL", "index" => 1, "lessThanOrEqual" => 2 })
+    gt = ParameterTerm.new({ "name" => "INT_ARRAY_POSITIONAL", "index" => 1, "greaterThan" => 1 })
+    solver.assert le.to_z3(solver, cfg_arch)
+    solver.assert gt.to_z3(solver, cfg_arch)
+    assert solver.satisfiable?
+
+    lt = ParameterTerm.new({ "name" => "INT_ARRAY_POSITIONAL", "index" => 1, "lessThan" => 2 })
+    solver.assert lt.to_z3(solver, cfg_arch)
+    assert solver.unsatisfiable?
+  end
+
+  # An element of a string array is the hash of the string, so a string
+  # constant compared with it must be hashed the same way.
+  def test_array_param_term_string_to_z3
+    solver = Udb::Z3Solver.new
+    eq = ParameterTerm.new({ "name" => "STRING_ARRAY_POSITIONAL", "index" => 0, "equal" => "xct" })
+    solver.assert eq.to_z3(solver, cfg_arch)
+    assert solver.satisfiable?
+
+    ne = ParameterTerm.new({ "name" => "STRING_ARRAY_POSITIONAL", "index" => 0, "notEqual" => "xct" })
+    solver.assert ne.to_z3(solver, cfg_arch)
+    assert solver.unsatisfiable?
+  end
+
   def test_scalar_param_terms
     h = {
       "name" => "SCOUNTENABLE_EN",
