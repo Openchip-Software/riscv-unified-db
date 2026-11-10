@@ -65,3 +65,5 @@ access:
   vs: always
   vu: always
 data_independent_timing: false
+operation(): |
+  zvvm_tile_store(lambda, vm, xs1, xs2, vs3, true, $encoding);

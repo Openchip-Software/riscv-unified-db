@@ -56,3 +56,5 @@ access:
   vs: always
   vu: always
 data_independent_timing: false
+operation(): |
+  zvvm_int_mmacc(2, vs1, vs2, vd, $encoding);
