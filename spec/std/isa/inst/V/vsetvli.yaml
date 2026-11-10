@@ -45,6 +45,7 @@ operation(): |
     CSR[vtype].VTA = 0;
     CSR[vtype].VSEW = 0;
     CSR[vtype].VLMUL = 0;
+    zvvm_clear_vtype();
     CSR[vl].VALUE = 0;
   } else {
     # valid, do the write
@@ -53,6 +54,7 @@ operation(): |
     CSR[vtype].VTA = new_vtype[6];
     CSR[vtype].VSEW = new_vtype[5:3];
     CSR[vtype].VLMUL = new_vtype[2:0];
+    zvvm_reselect_lambda();
 
     VectorState state = vector_state();
     XReg vlen = VLEN;
@@ -75,6 +77,7 @@ operation(): |
         CSR[vtype].VTA = 0;
         CSR[vtype].VSEW = 0;
         CSR[vtype].VLMUL = 0;
+        zvvm_clear_vtype();
         CSR[vl].VALUE = 0;
       }
       # else: keep vl unchanged

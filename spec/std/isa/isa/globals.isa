@@ -9,6 +9,7 @@ include "fetch.idl"
 include "util.idl"
 include "fp.idl"
 include "vec.idl"
+include "ime.idl"
 
 # global state
 
