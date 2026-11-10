@@ -44,6 +44,16 @@ class TestVariables < Minitest::Test
     end
   end
 
+  # A known string-array parameter value is folded to an array of string literals.
+  def test_create_literal_string_array
+    symtab = Idl::SymbolTable.new
+    type = Idl::Type.new(:array, sub_type: Idl::Type.new(:string), width: 2)
+    lit = Idl::PruneHelpers.create_literal(symtab, ["frm", "xct"], type)
+    assert_instance_of Idl::ArrayLiteralAst, lit
+    assert_equal ["frm", "xct"], lit.entries.map { |e| e.value(symtab) }
+    assert(lit.entries.all? { |e| e.is_a?(Idl::StringLiteralAst) })
+  end
+
   def test_prune_forced_type_nested
     orig_idl = "true ? 4'b0 : (5'b1 * 1)"
 
