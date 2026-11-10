@@ -1,0 +1,52 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/ext_schema.json
+
+$schema: "ext_schema.json#"
+kind: extension
+name: Zvvmm
+long_name: Integer matrix multiply-accumulate on vector register groups
+description: |
+  The Zvvmm family extension of the Zvvm Integrated Matrix extensions provides
+  instructions that perform matrix multiply-accumulate on integer data,
+  computing C ← C + A × B^T^, where A, B, and C are matrix tiles held in
+  vector register groups.
+
+  [cols="3,1,1,1", options="header"]
+  |===
+  | Mnemonic | W | A/B element width | C element width
+
+  | `vmmacc.vv vd, vs1, vs2`   | 1 | SEW   | SEW
+  | `vwmmacc.vv vd, vs1, vs2`  | 2 | SEW/2 | SEW
+  | `vqmmacc.vv vd, vs1, vs2`  | 4 | SEW/4 | SEW
+  | `v8wmmacc.vv vd, vs1, vs2` | 8 | SEW/8 | SEW
+  |===
+
+  `vd` holds the row-major C tile, `vs1` the row-major A tile and `vs2` the
+  row-major B tile. The `altfmt_A` and `altfmt_B` fields of `vtype` select
+  signed (0) or unsigned (1) interpretation of A and B. The accumulator is
+  always signed and accumulation is modular.
+
+  Vector masking is not supported. For `vmmacc.vv`, `vm=0` is reserved. For
+  `vwmmacc.vv`, `vqmmacc.vv` and `v8wmmacc.vv`, `vm=0` encodes the
+  microscaled integer-input instructions of Zvvfmm.
+
+  The input and accumulator types that are legal for each instruction are
+  selected by the individual extensions `Zvvi4i8mm` through `Zvvi64mm`.
+  Each individual integer extension requires Zvvmm. An encoding whose
+  integer encoding-map row names an extension that is not implemented raises
+  an illegal-instruction exception.
+
+  Matrix multiply-accumulate instructions require `vstart` = 0.
+type: unprivileged
+versions:
+  - version: "0.9.0"
+    # commit: e99d9065 (tag v0.9.0-on-main)
+    state: development
+    repositories:
+      - url: https://github.com/riscv/integrated-matrix-extension
+        branch: main
+requirements:
+  extension:
+    name: Zve32x

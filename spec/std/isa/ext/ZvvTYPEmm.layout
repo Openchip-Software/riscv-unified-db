@@ -1,0 +1,87 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/ext_schema.json
+<%- raise "'ime_ext' must be defined" if ime_ext.nil? -%>
+<%-
+  a = IME_TYPES.fetch(ime_ext[:a])
+  c = IME_TYPES.fetch(ime_ext[:c])
+  w = c[:width] / a[:width]
+  sew = c[:width]
+  mx = !ime_ext[:bs].nil?
+  family = c[:kind] == :int ? "Zvvmm" : "Zvvfmm"
+  insn =
+    if c[:kind] == :int
+      { 1 => "vmmacc.vv", 2 => "vwmmacc.vv", 4 => "vqmmacc.vv", 8 => "v8wmmacc.vv" }.fetch(w)
+    elsif a[:kind] == :int
+      { 2 => "vfwimmacc.vv", 4 => "vfqimmacc.vv", 8 => "vf8wimmacc.vv" }.fetch(w)
+    else
+      { 1 => "vfmmacc.vv", 2 => "vfwmmacc.vv", 4 => "vfqmmacc.vv", 8 => "vf8wmmacc.vv" }.fetch(w)
+    end
+  input_name = mx ? a[:mx_name] : a[:name]
+-%>
+
+$schema: "ext_schema.json#"
+kind: extension
+name: <%= ime_extension_name(ime_ext) %>
+<%- if mx -%>
+long_name: Microscaled matrix multiply-accumulate, <%= input_name %> inputs, <%= c[:acc_name] %> accumulator, block size <%= ime_ext[:bs] %>
+<%- else -%>
+long_name: Matrix multiply-accumulate, <%= input_name %> inputs, <%= c[:acc_name] %> accumulator
+<%- end -%>
+description: |
+<%- if mx -%>
+  Enables the `vm=0` (`v0.scale`) encodings of `<%= insn %>` (W=<%= w %>,
+  SEW=<%= sew %>) for E8M0-scaled <%= input_name %> A and B input elements and
+  <%= c[:acc_name] %> C accumulator elements, with block size <%= ime_ext[:bs] %>
+  (`vtype.bs` = <%= ime_ext[:bs] == 32 ? 0 : 1 %>).
+  The <%= a[:kind] == :int ? "integer MX" : "floating-point" %> encoding map of the Zvvm specification names this
+  extension in the block-size cells that it makes legal.
+<%-   if ime_ext[:bs] == 16 -%>
+
+  With block size 16, the instruction raises an illegal-instruction exception
+  unless W × LMUL ≤ SEW.
+<%-   end -%>
+<%-   if ime_ext[:implies] -%>
+
+  <%= ime_extension_name(ime_ext) %> implies <%= ime_ext[:implies] %>.
+<%-   else -%>
+
+  The integer-input microscaling extensions imply no other extension.
+  `<%= insn %>` has no unscaled form; its `vm=1` encoding is the integer
+  instruction of Zvvmm.
+<%-   end -%>
+<%- else -%>
+  Enables the `<%= insn %>` (W=<%= w %>, SEW=<%= sew %>) encodings with
+  <%= input_name %> A and B input elements and <%= c[:acc_name] %> C accumulator
+  elements. The <%= c[:kind] == :int ? "integer" : "floating-point" %> encoding map of the Zvvm specification names this
+  extension in the rows that it makes legal.
+<%-   if c[:kind] == :int -%>
+
+  `vtype.altfmt_A` and `vtype.altfmt_B` select signed (0) or unsigned (1)
+  interpretation of the A and B inputs. The accumulator is signed.
+<%-   else -%>
+
+  Rows that mix two input formats name more than one extension and require
+  all of them.
+<%-   end -%>
+<%- end -%>
+type: unprivileged
+versions:
+  - version: "0.9.0"
+    # commit: e99d9065 (tag v0.9.0-on-main)
+    state: development
+    repositories:
+      - url: https://github.com/riscv/integrated-matrix-extension
+        branch: main
+<%- if ime_ext[:implies] -%>
+    requirements:
+      extension:
+        name: <%= ime_ext[:implies] %>
+        version: "= 0.9.0"
+<%- end -%>
+requirements:
+  extension:
+    allOf:
+      - name: <%= family %>
+      - name: <%= ime_zve_dependency(ime_ext) %>

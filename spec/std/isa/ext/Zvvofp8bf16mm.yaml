@@ -1,0 +1,33 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+
+# WARNING: This file is auto-generated from spec/std/isa/ext/ZvvTYPEmm.layout
+
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/ext_schema.json
+
+$schema: "ext_schema.json#"
+kind: extension
+name: Zvvofp8bf16mm
+long_name: Matrix multiply-accumulate, OFP8 (E4M3 or E5M2) inputs, BFloat16 accumulator
+description: |
+  Enables the `vfwmmacc.vv` (W=2, SEW=16) encodings with
+  OFP8 (E4M3 or E5M2) A and B input elements and BFloat16 C accumulator
+  elements. The floating-point encoding map of the Zvvm specification names this
+  extension in the rows that it makes legal.
+
+  Rows that mix two input formats name more than one extension and require
+  all of them.
+type: unprivileged
+versions:
+  - version: "0.9.0"
+    # commit: e99d9065 (tag v0.9.0-on-main)
+    state: development
+    repositories:
+      - url: https://github.com/riscv/integrated-matrix-extension
+        branch: main
+requirements:
+  extension:
+    allOf:
+      - name: Zvvfmm
+      - name: Zve32f

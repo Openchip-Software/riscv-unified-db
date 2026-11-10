@@ -568,6 +568,94 @@ end
   end
 end
 
+# Zvvm (Integrated Matrix) element types, by the token used in extension names
+IME_TYPES = {
+  "i4"   => { kind: :int, width: 4,  name: "[U]Int4",             mx_name: "MXINT4" },
+  "i8"   => { kind: :int, width: 8,  name: "[U]Int8",             mx_name: "MXINT8",  acc_name: "Int8" },
+  "i16"  => { kind: :int, width: 16, name: "[U]Int16",                                acc_name: "Int16" },
+  "i32"  => { kind: :int, width: 32, name: "[U]Int32",                                acc_name: "Int32" },
+  "i64"  => { kind: :int, width: 64, name: "[U]Int64",                                acc_name: "Int64" },
+  "ofp4" => { kind: :fp,  width: 4,  name: "OFP4 (E2M1)",         mx_name: "MXFP4" },
+  "ofp8" => { kind: :fp,  width: 8,  name: "OFP8 (E4M3 or E5M2)", mx_name: "MXFP8",   acc_name: "OFP8" },
+  "fp16" => { kind: :fp,  width: 16, name: "IEEE binary16",                           acc_name: "IEEE binary16" },
+  "bf16" => { kind: :fp,  width: 16, name: "BFloat16",                                acc_name: "BFloat16" },
+  "fp32" => { kind: :fp,  width: 32, name: "IEEE binary32",                           acc_name: "IEEE binary32" },
+  "fp64" => { kind: :fp,  width: 64, name: "IEEE binary64",                           acc_name: "IEEE binary64" }
+}.freeze
+
+# Zvvm individual extensions, as "input:accumulator" pairs.
+# Source: "Computational extensions" and "Microscaling subextensions" tables of
+# https://github.com/riscv/integrated-matrix-extension (tag v0.9.0-on-main)
+ime_unscaled_pairs = %w[
+  i4:i8 i4:i16 i4:i32 i8:i8 i8:i16 i8:i32 i8:i64 i16:i16 i16:i32 i16:i64 i32:i32 i32:i64 i64:i64
+  ofp4:ofp8 ofp4:fp16 ofp4:bf16 ofp4:fp32 ofp8:ofp8 ofp8:fp16 ofp8:bf16 ofp8:fp32 ofp8:fp64
+  fp16:fp16 fp16:fp32 fp16:fp64 bf16:bf16 bf16:fp32 bf16:fp64 fp32:fp32 fp32:fp64 fp64:fp64
+]
+ime_mx_pairs = %w[
+  ofp4:ofp8 ofp4:fp16 ofp4:bf16 ofp4:fp32 ofp8:fp16 ofp8:bf16 ofp8:fp32 ofp8:fp64
+  i8:fp16 i8:bf16 i8:fp32 i8:fp64 i4:fp16 i4:bf16 i4:fp32
+]
+
+def ime_extension_name(e)
+  prefix = { nil => "", 32 => "x", 16 => "xn" }.fetch(e[:bs])
+  "Zvv#{prefix}#{e[:a]}#{e[:a] == e[:c] ? '' : e[:c]}mm"
+end
+
+def ime_zve_dependency(e)
+  wide = e[:c].end_with?("64")
+  if IME_TYPES.fetch(e[:c])[:kind] == :int
+    wide ? "Zve64x" : "Zve32x"
+  else
+    wide ? "Zve64d" : "Zve32f"
+  end
+end
+
+IME_TYPE_EXTENSIONS = (
+  ime_unscaled_pairs.map { |p| a, c = p.split(":"); { a:, c:, bs: nil, implies: nil } } +
+  [32, 16].flat_map do |bs|
+    ime_mx_pairs.map do |p|
+      a, c = p.split(":")
+      # BS=32 FP MX implies the unscaled extension; BS=16 implies the BS=32 extension.
+      # BS=32 integer MX implies nothing, because there is no unscaled integer-input FP form.
+      implied_bs = { 32 => nil, 16 => 32 }.fetch(bs)
+      implies =
+        if bs == 32 && IME_TYPES.fetch(a)[:kind] == :int
+          nil
+        else
+          ime_extension_name({ a:, c:, bs: implied_bs })
+        end
+      { a:, c:, bs:, implies: }
+    end
+  end
+).freeze
+
+IME_TYPE_EXTENSIONS.each do |ime_ext|
+  file "#{$resolver.std_path}/ext/#{ime_extension_name(ime_ext)}.yaml" => [
+    "#{$resolver.std_path}/ext/ZvvTYPEmm.layout",
+    __FILE__
+  ] do |t|
+    FileUtils.rm_f(t.name)
+    erb = ERB.new(File.read($resolver.std_path / "ext/ZvvTYPEmm.layout"), trim_mode: "-")
+    erb.filename = "#{$resolver.std_path}/ext/ZvvTYPEmm.layout"
+    File.write(t.name, insert_warning(erb.result(binding), t.prerequisites.first))
+    File.chmod(0444, t.name)
+  end
+end
+
+# Zvvm supported-lambda parameters, one per SEW
+[8, 16, 32, 64].each do |sew|
+  file "#{$resolver.std_path}/param/SUPPORTED_LAMBDA_SEW#{sew}.yaml" => [
+    "#{$resolver.std_path}/param/SUPPORTED_LAMBDA_SEWN.layout",
+    __FILE__
+  ] do |t|
+    FileUtils.rm_f(t.name)
+    erb = ERB.new(File.read($resolver.std_path / "param/SUPPORTED_LAMBDA_SEWN.layout"), trim_mode: "-")
+    erb.filename = "#{$resolver.std_path}/param/SUPPORTED_LAMBDA_SEWN.layout"
+    File.write(t.name, insert_warning(erb.result(binding), t.prerequisites.first))
+    File.chmod(0444, t.name)
+  end
+end
+
 def gen_arch_file(f)
   FileUtils.rm_f f
   Rake::Task[f].invoke
@@ -655,6 +743,16 @@ namespace :gen do
     # Generate C.MOP instruction files (c.mop.1, c.mop.3, c.mop.5, c.mop.7, c.mop.9, c.mop.11, c.mop.13, c.mop.15)
     [1, 3, 5, 7, 9, 11, 13, 15].each do |n|
       gen_arch_file("#{$resolver.std_path}/inst/Zcmop/c.mop.#{n}.yaml")
+    end
+
+    # Generate Zvvm individual extension files
+    IME_TYPE_EXTENSIONS.each do |ime_ext|
+      gen_arch_file("#{$resolver.std_path}/ext/#{ime_extension_name(ime_ext)}.yaml")
+    end
+
+    # Generate Zvvm supported-lambda parameter files
+    [8, 16, 32, 64].each do |sew|
+      gen_arch_file("#{$resolver.std_path}/param/SUPPORTED_LAMBDA_SEW#{sew}.yaml")
     end
   end
 

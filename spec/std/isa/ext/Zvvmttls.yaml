@@ -1,0 +1,30 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/ext_schema.json
+
+$schema: "ext_schema.json#"
+kind: extension
+name: Zvvmttls
+long_name: Transposing matrix tile load and store for vector register groups
+description: |
+  The Zvvmttls extension of the Zvvm Integrated Matrix extensions provides the
+  transposing tile load `vmttl.v` and tile store `vmtts.v`. They transpose
+  2D arrays of SEW-bit storage elements between memory and vector register
+  groups.
+
+  The instructions use the memory-layout, tile-geometry, masking, restart and
+  legality rules of Zvvmtls. They transpose storage elements. When several
+  logical elements are packed in one SEW-bit storage element, the instructions
+  do not transpose the individual logical elements.
+type: unprivileged
+versions:
+  - version: "0.9.0"
+    # commit: e99d9065 (tag v0.9.0-on-main)
+    state: development
+    repositories:
+      - url: https://github.com/riscv/integrated-matrix-extension
+        branch: main
+requirements:
+  extension:
+    name: Zve32x
