@@ -36,6 +36,131 @@ fields:
     type: RO-H
     reset_value(): |
       return (FOLLOW_VTYPE_RESET_RECOMMENDATION)? 1 : UNDEFINED_LEGAL;
+  LAMBDA:
+    location_rv32: 30-28
+    location_rv64: 62-60
+    description: |
+      Selected lambda. Lambda determines the geometry of the Zvvm matrix
+      accumulator tile C and, together with the widening factor W and LMUL,
+      the effective inner dimension K_eff = lambda × W × LMUL.
+
+      [separator="!"]
+      !===
+      ! lambda[2:0] ! Selected lambda
+      ! 000 ! no selected lambda
+      ! 001 ! 1
+      ! 010 ! 2
+      ! 011 ! 4
+      ! 100 ! 8
+      ! 101 ! 16
+      ! 110 ! 32
+      ! 111 ! 64
+      !===
+
+      The field is WARL. The supported nonzero values for each SEW are given by
+      the `SUPPORTED_LAMBDA_SEW<n>` parameters. A nonzero lambda is permissible
+      only when EMUL_C = VLEN / (SEW × lambda^2^) is in {1, 2, 4, 8, 16}.
+
+      `vsetvl` writes the field from `rs2`. A nonzero request selects that value
+      if it is supported, or else the largest supported value below it, or
+      else the smallest supported value. A request of zero keeps the current
+      value if it is supported for the new SEW, and otherwise selects the
+      largest supported value.
+
+      `vsetvli` and `vsetivli` do not write the field directly. They keep the
+      current value if it is supported for the new SEW, and otherwise select
+      the largest supported value.
+
+      If no lambda is permissible for the resulting (VLEN, SEW), the field is
+      set to zero. A Zvvm instruction that needs a dynamic lambda raises an
+      illegal-instruction exception when the field is zero.
+
+      The field reads as zero when VILL is set.
+    definedBy:
+      extension:
+        anyOf:
+          - name: Zvvmm
+          - name: Zvvfmm
+          - name: Zvvmtls
+          - name: Zvvmttls
+    type: RO-H
+    reset_value(): |
+      return (FOLLOW_VTYPE_RESET_RECOMMENDATION)? 0 : UNDEFINED_LEGAL;
+  BS:
+    location_rv32: 27
+    location_rv64: 59
+    description: |
+      Microscaling block size for Zvvm matrix multiply-accumulate instructions
+      with `vm=0`. Zero selects a block size of 32 elements, and one selects a
+      block size of 16 elements. The field is ignored when `vm=1`.
+
+      `vsetvl` writes the field from `rs2`. `vsetvli` and `vsetivli` keep its
+      value. The instruction that uses the field checks whether the
+      combination is legal.
+
+      The field reads as zero when VILL is set.
+    definedBy:
+      extension:
+        anyOf:
+          - name: Zvvmm
+          - name: Zvvfmm
+          - name: Zvvmtls
+          - name: Zvvmttls
+    type: RO-H
+    reset_value(): |
+      return (FOLLOW_VTYPE_RESET_RECOMMENDATION)? 0 : UNDEFINED_LEGAL;
+  ALTFMTA:
+    location_rv32: 26
+    location_rv64: 58
+    description: |
+      Alternate format for the A input tile of Zvvm matrix multiply-accumulate
+      instructions. The Zvvm specification names this field `altfmt_A`.
+
+      For floating-point instructions, the field selects the input format
+      together with the input element width SEW/W: E2M1 for 4-bit elements
+      (one is reserved), E4M3 (0) or E5M2 (1) for 8-bit elements, and IEEE
+      binary16 (0) or BFloat16 (1) for 16-bit elements. The field is ignored
+      for 32-bit and 64-bit inputs.
+
+      For integer instructions, the field selects signed (0) or unsigned (1)
+      interpretation.
+
+      `vsetvl` writes the field from `rs2`. `vsetvli` and `vsetivli` keep its
+      value.
+
+      The field reads as zero when VILL is set.
+    definedBy:
+      extension:
+        anyOf:
+          - name: Zvvmm
+          - name: Zvvfmm
+          - name: Zvvmtls
+          - name: Zvvmttls
+    type: RO-H
+    reset_value(): |
+      return (FOLLOW_VTYPE_RESET_RECOMMENDATION)? 0 : UNDEFINED_LEGAL;
+  ALTFMTB:
+    location_rv32: 25
+    location_rv64: 57
+    description: |
+      Alternate format for the B input tile of Zvvm matrix multiply-accumulate
+      instructions. The Zvvm specification names this field `altfmt_B`.
+      The encoding is the same as for ALTFMTA.
+
+      `vsetvl` writes the field from `rs2`. `vsetvli` and `vsetivli` keep its
+      value.
+
+      The field reads as zero when VILL is set.
+    definedBy:
+      extension:
+        anyOf:
+          - name: Zvvmm
+          - name: Zvvfmm
+          - name: Zvvmtls
+          - name: Zvvmttls
+    type: RO-H
+    reset_value(): |
+      return (FOLLOW_VTYPE_RESET_RECOMMENDATION)? 0 : UNDEFINED_LEGAL;
   ALTFMT:
     location: 8
     description: |
@@ -48,10 +173,17 @@ fields:
       [NOTE]
       Implementations should set VILL when a reserved combination of ALTFMT and SEW is selected.
 
+      Zvvfmm uses ALTFMT, together with SEW, to select the format of the C
+      accumulator elements of matrix multiply-accumulate instructions:
+      E4M3 (0) or E5M2 (1) for SEW=8, and IEEE binary16 (0) or BFloat16 (1)
+      for SEW=16.
+
       It is recommended that at reset, vill is set, and the remaining bits in vtype are zero.
     definedBy:
       extension:
-        name: Zvfbfa
+        anyOf:
+          - name: Zvfbfa
+          - name: Zvvfmm
     type: RO-H
     reset_value(): |
       return (FOLLOW_VTYPE_RESET_RECOMMENDATION)? 0 : UNDEFINED_LEGAL;
