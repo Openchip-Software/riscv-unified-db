@@ -1,0 +1,55 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+
+# WARNING: This file is auto-generated from spec/std/isa/param/ZVVM_FP_DISCLOSURE.layout
+
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/param_schema.json
+
+$schema: param_schema.json#
+kind: parameter
+name: ZVVM_FP_RND_SEW8_W1
+long_name: Disclosed group rounding rnd for Zvvm floating-point SEW=8, W=1
+description: |
+  The treatment rnd of each group partial sum before it is accumulated into
+  C, as disclosed by the implementation for Zvvm floating-point matrix
+  multiply-accumulate with SEW=8 and widening factor W=1.
+
+  Entry i is rnd for lambda = 2^i^, that is for `vtype.lambda[2:0]` = i + 1:
+
+  * `frm`: the partial sum is rounded to the C format with the rounding mode in `frm`.
+  * `rto`: the partial sum is rounded to the C format with round-to-odd.
+  * `xct`: the partial sum is not rounded before the final accumulation.
+  * `none`: lambda = 2^i^ is not in `SUPPORTED_LAMBDA_SEW8`.
+
+  The same value applies to every input and accumulator format, and to the
+  unscaled and microscaled forms, with this geometry. The integer-input
+  microscaled instructions do not use it.
+schema:
+  type: array
+  items:
+    type: string
+    enum: [none, frm, rto, xct]
+  minItems: 7
+  maxItems: 7
+definedBy:
+  extension:
+    name: Zvvofp8mm
+requirements:
+  idl(): |
+    $array_includes?(SUPPORTED_LAMBDA_SEW8, 1) -> (ZVVM_FP_RND_SEW8_W1[0] != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW8, 1) -> (ZVVM_FP_RND_SEW8_W1[0] == "none");
+    $array_includes?(SUPPORTED_LAMBDA_SEW8, 2) -> (ZVVM_FP_RND_SEW8_W1[1] != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW8, 2) -> (ZVVM_FP_RND_SEW8_W1[1] == "none");
+    $array_includes?(SUPPORTED_LAMBDA_SEW8, 4) -> (ZVVM_FP_RND_SEW8_W1[2] != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW8, 4) -> (ZVVM_FP_RND_SEW8_W1[2] == "none");
+    $array_includes?(SUPPORTED_LAMBDA_SEW8, 8) -> (ZVVM_FP_RND_SEW8_W1[3] != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW8, 8) -> (ZVVM_FP_RND_SEW8_W1[3] == "none");
+    $array_includes?(SUPPORTED_LAMBDA_SEW8, 16) -> (ZVVM_FP_RND_SEW8_W1[4] != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW8, 16) -> (ZVVM_FP_RND_SEW8_W1[4] == "none");
+    $array_includes?(SUPPORTED_LAMBDA_SEW8, 32) -> (ZVVM_FP_RND_SEW8_W1[5] != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW8, 32) -> (ZVVM_FP_RND_SEW8_W1[5] == "none");
+    $array_includes?(SUPPORTED_LAMBDA_SEW8, 64) -> (ZVVM_FP_RND_SEW8_W1[6] != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW8, 64) -> (ZVVM_FP_RND_SEW8_W1[6] == "none");
+  reason: |
+    A value is disclosed exactly for each lambda in SUPPORTED_LAMBDA_SEW8.

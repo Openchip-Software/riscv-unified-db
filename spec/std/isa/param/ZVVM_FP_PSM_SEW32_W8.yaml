@@ -1,0 +1,53 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+
+# WARNING: This file is auto-generated from spec/std/isa/param/ZVVM_FP_DISCLOSURE.layout
+
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/param_schema.json
+
+$schema: param_schema.json#
+kind: parameter
+name: ZVVM_FP_PSM_SEW32_W8
+long_name: Disclosed partial-sum mode psm for Zvvm floating-point SEW=32, W=8
+description: |
+  The partial-sum mode psm that the implementation discloses for Zvvm
+  floating-point matrix multiply-accumulate with SEW=32 and widening
+  factor W=8.
+
+  Entry i is psm for lambda = 2^i^, that is for `vtype.lambda[2:0]` = i + 1.
+  False (psm=0) means that each group partial sum is computed exactly. True
+  (psm=1) means that it is computed by the implementation-defined reduction
+  named by `ZVVM_FP_PSM1_ALGORITHM`. Entry i is false when lambda = 2^i^ is
+  not in `SUPPORTED_LAMBDA_SEW32`.
+
+  The same value applies to every input and accumulator format, and to the
+  unscaled and microscaled forms, with this geometry. The integer-input
+  microscaled instructions do not use it.
+schema:
+  type: array
+  items:
+    type: boolean
+  minItems: 7
+  maxItems: 7
+definedBy:
+  extension:
+    name: Zvvofp4fp32mm
+requirements:
+  idl(): |
+    !$array_includes?(SUPPORTED_LAMBDA_SEW32, 1) -> !ZVVM_FP_PSM_SEW32_W8[0];
+    ZVVM_FP_PSM_SEW32_W8[0] -> (ZVVM_FP_PSM1_ALGORITHM != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW32, 2) -> !ZVVM_FP_PSM_SEW32_W8[1];
+    ZVVM_FP_PSM_SEW32_W8[1] -> (ZVVM_FP_PSM1_ALGORITHM != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW32, 4) -> !ZVVM_FP_PSM_SEW32_W8[2];
+    ZVVM_FP_PSM_SEW32_W8[2] -> (ZVVM_FP_PSM1_ALGORITHM != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW32, 8) -> !ZVVM_FP_PSM_SEW32_W8[3];
+    ZVVM_FP_PSM_SEW32_W8[3] -> (ZVVM_FP_PSM1_ALGORITHM != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW32, 16) -> !ZVVM_FP_PSM_SEW32_W8[4];
+    ZVVM_FP_PSM_SEW32_W8[4] -> (ZVVM_FP_PSM1_ALGORITHM != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW32, 32) -> !ZVVM_FP_PSM_SEW32_W8[5];
+    ZVVM_FP_PSM_SEW32_W8[5] -> (ZVVM_FP_PSM1_ALGORITHM != "none");
+    !$array_includes?(SUPPORTED_LAMBDA_SEW32, 64) -> !ZVVM_FP_PSM_SEW32_W8[6];
+    ZVVM_FP_PSM_SEW32_W8[6] -> (ZVVM_FP_PSM1_ALGORITHM != "none");
+  reason: |
+    An entry is true only for a supported lambda, and only when ZVVM_FP_PSM1_ALGORITHM names the reduction.

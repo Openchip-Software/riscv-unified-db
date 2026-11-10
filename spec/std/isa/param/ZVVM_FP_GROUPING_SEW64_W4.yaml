@@ -1,0 +1,56 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+
+# WARNING: This file is auto-generated from spec/std/isa/param/ZVVM_FP_DISCLOSURE.layout
+
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/param_schema.json
+
+$schema: param_schema.json#
+kind: parameter
+name: ZVVM_FP_GROUPING_SEW64_W4
+long_name: Disclosed grouping factor G for Zvvm floating-point SEW=64, W=4
+description: |
+  The grouping factor G that the implementation discloses for Zvvm
+  floating-point matrix multiply-accumulate with SEW=64 and widening
+  factor W=4. The sub-dot-products for each output element are
+  partitioned into consecutive groups of G, and each group is reduced into a
+  partial sum before it is accumulated into C.
+
+  Entry i is G for lambda = 2^i^, that is for `vtype.lambda[2:0]` = i + 1.
+  G is a power of two that is not larger than lambda. Entry i is 0 when
+  lambda = 2^i^ is not in `SUPPORTED_LAMBDA_SEW64`.
+
+  The same value applies to every input and accumulator format, and to the
+  unscaled and microscaled forms, with this geometry. The integer-input
+  microscaled instructions do not use it.
+schema:
+  type: array
+  items:
+    type: integer
+    enum: [0, 1, 2, 4, 8, 16, 32, 64]
+  minItems: 7
+  maxItems: 7
+definedBy:
+  extension:
+    anyOf:
+      - name: Zvvfp16fp64mm
+      - name: Zvvbf16fp64mm
+requirements:
+  idl(): |
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 1) -> ((ZVVM_FP_GROUPING_SEW64_W4[0] != 0) && (ZVVM_FP_GROUPING_SEW64_W4[0] <= 1));
+    !$array_includes?(SUPPORTED_LAMBDA_SEW64, 1) -> (ZVVM_FP_GROUPING_SEW64_W4[0] == 0);
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 2) -> ((ZVVM_FP_GROUPING_SEW64_W4[1] != 0) && (ZVVM_FP_GROUPING_SEW64_W4[1] <= 2));
+    !$array_includes?(SUPPORTED_LAMBDA_SEW64, 2) -> (ZVVM_FP_GROUPING_SEW64_W4[1] == 0);
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 4) -> ((ZVVM_FP_GROUPING_SEW64_W4[2] != 0) && (ZVVM_FP_GROUPING_SEW64_W4[2] <= 4));
+    !$array_includes?(SUPPORTED_LAMBDA_SEW64, 4) -> (ZVVM_FP_GROUPING_SEW64_W4[2] == 0);
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 8) -> ((ZVVM_FP_GROUPING_SEW64_W4[3] != 0) && (ZVVM_FP_GROUPING_SEW64_W4[3] <= 8));
+    !$array_includes?(SUPPORTED_LAMBDA_SEW64, 8) -> (ZVVM_FP_GROUPING_SEW64_W4[3] == 0);
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 16) -> ((ZVVM_FP_GROUPING_SEW64_W4[4] != 0) && (ZVVM_FP_GROUPING_SEW64_W4[4] <= 16));
+    !$array_includes?(SUPPORTED_LAMBDA_SEW64, 16) -> (ZVVM_FP_GROUPING_SEW64_W4[4] == 0);
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 32) -> ((ZVVM_FP_GROUPING_SEW64_W4[5] != 0) && (ZVVM_FP_GROUPING_SEW64_W4[5] <= 32));
+    !$array_includes?(SUPPORTED_LAMBDA_SEW64, 32) -> (ZVVM_FP_GROUPING_SEW64_W4[5] == 0);
+    $array_includes?(SUPPORTED_LAMBDA_SEW64, 64) -> ((ZVVM_FP_GROUPING_SEW64_W4[6] != 0) && (ZVVM_FP_GROUPING_SEW64_W4[6] <= 64));
+    !$array_includes?(SUPPORTED_LAMBDA_SEW64, 64) -> (ZVVM_FP_GROUPING_SEW64_W4[6] == 0);
+  reason: |
+    G is disclosed exactly for each lambda in SUPPORTED_LAMBDA_SEW64, and G is not larger than lambda.

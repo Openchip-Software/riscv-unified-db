@@ -1,0 +1,25 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/param_schema.json
+
+$schema: param_schema.json#
+kind: parameter
+name: ZVVM_FP_PSM1_SAIL_FRAGMENT
+long_name: Location of the SAIL fragment for a custom Zvvm psm=1 reduction
+description: |
+  Where the SAIL fragment that defines the custom psm=1 reduction is
+  published, for example a URL or a repository and commit. The fragment
+  defines `fp_disclosed_reduce_group` and identifies the version of the Zvvm
+  specification against which it was written.
+
+  UDB stores this reference for documentation and does not read the fragment.
+schema:
+  type: string
+definedBy:
+  allOf:
+    - extension:
+        name: Zvvfmm
+    - param:
+        name: ZVVM_FP_PSM1_ALGORITHM
+        equal: custom
