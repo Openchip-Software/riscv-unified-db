@@ -188,13 +188,25 @@ module UdbGen
         when String
           lines << "#{define_directive} #{prefixed}_#{sanitize_to_identifier(value)}"
         when Array
-          emit_array_param(lines, prefixed, value)
+          emit_array_param(lines, prefixed, value, positional: fixed_length_array_param?(name))
         end
       end
     end
 
-    sig { params(lines: T::Array[String], name: String, value: T::Array[T.untyped]).void }
-    def emit_array_param(lines, name, value)
+    # True when the schema of parameter +name+ fixes the array length, so that
+    # each element position has a meaning of its own.
+    sig { params(name: String).returns(T::Boolean) }
+    def fixed_length_array_param?(name)
+      schema = cfg_arch.param(name)&.schema&.to_h
+      return false if schema.nil?
+
+      !schema["minItems"].nil? && schema["minItems"] == schema["maxItems"]
+    end
+
+    # Integer and string arrays are emitted as sets, one macro per distinct value.
+    # With +positional+, each element is also emitted by index as UDB_X_IDX<i>.
+    sig { params(lines: T::Array[String], name: String, value: T::Array[T.untyped], positional: T::Boolean).void }
+    def emit_array_param(lines, name, value, positional: false)
       return if value.empty?
 
       if value.all? { |v| v == true || v == false }
@@ -207,9 +219,19 @@ module UdbGen
         value.uniq.sort.each do |v|
           lines << "#{define_directive} #{name}_#{v}"
         end
+        if positional
+          value.each_with_index do |v, i|
+            lines << "#{define_directive} #{name}_IDX#{i} #{format_integer(v)}"
+          end
+        end
       elsif value.all? { |v| v.is_a?(String) }
         value.map { |v| sanitize_to_identifier(v) }.uniq.sort.each do |sanitized|
           lines << "#{define_directive} #{name}_#{sanitized}"
+        end
+        if positional
+          value.each_with_index do |v, i|
+            lines << "#{define_directive} #{name}_IDX#{i}_#{sanitize_to_identifier(v)}"
+          end
         end
       end
     end
