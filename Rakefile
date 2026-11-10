@@ -659,6 +659,25 @@ end
   ime_layout_file("param/SUPPORTED_LAMBDA_SEW#{sew}.yaml", "param/SUPPORTED_LAMBDA_SEWN.layout", sew:)
 end
 
+# Zvvm floating-point disclosure parameters, one per quantity and (SEW, W) pair.
+# The pairs, and the extensions that define each parameter, come from the
+# unscaled floating-point extensions; the microscaling extensions imply those.
+IME_FP_GEOMETRIES = IME_TYPE_EXTENSIONS
+  .select { |e| e[:bs].nil? && IME_TYPES.fetch(e[:c])[:kind] == :fp }
+  .group_by do |e|
+    sew = IME_TYPES.fetch(e[:c])[:width]
+    [sew, sew / IME_TYPES.fetch(e[:a])[:width]]
+  end
+  .transform_values { |es| es.map { |e| ime_extension_name(e) } }
+  .sort.to_h.freeze
+
+IME_FP_GEOMETRIES.each do |(sew, w), exts|
+  %w[GROUPING PSM RND].each do |quantity|
+    ime_layout_file("param/ZVVM_FP_#{quantity}_SEW#{sew}_W#{w}.yaml", "param/ZVVM_FP_DISCLOSURE.layout",
+                    quantity:, sew:, w:, exts:)
+  end
+end
+
 def gen_arch_file(f, read_only: true)
   FileUtils.rm_f f
   Rake::Task[f].invoke

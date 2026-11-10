@@ -1,0 +1,29 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/param_schema.json
+
+$schema: param_schema.json#
+kind: parameter
+name: ZVVM_FP_PSM1_ALGORITHM
+long_name: Disclosed reduction algorithm for Zvvm floating-point psm=1
+description: |
+  The reduction algorithm that forms a group partial sum when a
+  `ZVVM_FP_PSM_SEW<s>_W<w>` entry is true (psm=1).
+
+  * `none`: no geometry uses psm=1.
+  * `RVBNA`: the RISC-V Bulk Normalization Algorithm defined by Zvdota, at its
+    standard parameters. The SAIL fragment published with the RVBNA
+    specification is the disclosure.
+  * `custom`: another algorithm. `ZVVM_FP_PSM1_SAIL_FRAGMENT` names the SAIL
+    fragment that defines it.
+
+  The Zvvm specification requires a SAIL fragment that defines
+  `fp_disclosed_reduce_group` bit-exactly, including the accrued exception
+  flags, for every psm=1 entry. UDB records only which algorithm is used.
+schema:
+  type: string
+  enum: [none, RVBNA, custom]
+definedBy:
+  extension:
+    name: Zvvfmm

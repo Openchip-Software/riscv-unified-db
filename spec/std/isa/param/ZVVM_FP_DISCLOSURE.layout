@@ -1,0 +1,107 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../schemas/param_schema.json
+<%- raise "'quantity', 'sew', 'w' and 'exts' must be defined" if [quantity, sew, w, exts].any?(&:nil?) -%>
+<%-
+  name = "ZVVM_FP_#{quantity}_SEW#{sew}_W#{w}"
+  lambdas = [1, 2, 4, 8, 16, 32, 64]
+  supported = "SUPPORTED_LAMBDA_SEW#{sew}"
+-%>
+
+$schema: param_schema.json#
+kind: parameter
+name: <%= name %>
+<%- case quantity -%>
+<%- when "GROUPING" -%>
+long_name: Disclosed grouping factor G for Zvvm floating-point SEW=<%= sew %>, W=<%= w %>
+description: |
+  The grouping factor G that the implementation discloses for Zvvm
+  floating-point matrix multiply-accumulate with SEW=<%= sew %> and widening
+  factor W=<%= w %>. The sub-dot-products for each output element are
+  partitioned into consecutive groups of G, and each group is reduced into a
+  partial sum before it is accumulated into C.
+
+  Entry i is G for lambda = 2^i^, that is for `vtype.lambda[2:0]` = i + 1.
+  G is a power of two that is not larger than lambda. Entry i is 0 when
+  lambda = 2^i^ is not in `<%= supported %>`.
+<%- when "PSM" -%>
+long_name: Disclosed partial-sum mode psm for Zvvm floating-point SEW=<%= sew %>, W=<%= w %>
+description: |
+  The partial-sum mode psm that the implementation discloses for Zvvm
+  floating-point matrix multiply-accumulate with SEW=<%= sew %> and widening
+  factor W=<%= w %>.
+
+  Entry i is psm for lambda = 2^i^, that is for `vtype.lambda[2:0]` = i + 1.
+  False (psm=0) means that each group partial sum is computed exactly. True
+  (psm=1) means that it is computed by the implementation-defined reduction
+  named by `ZVVM_FP_PSM1_ALGORITHM`. Entry i is false when lambda = 2^i^ is
+  not in `<%= supported %>`.
+<%- when "RND" -%>
+long_name: Disclosed group rounding rnd for Zvvm floating-point SEW=<%= sew %>, W=<%= w %>
+description: |
+  The treatment rnd of each group partial sum before it is accumulated into
+  C, as disclosed by the implementation for Zvvm floating-point matrix
+  multiply-accumulate with SEW=<%= sew %> and widening factor W=<%= w %>.
+
+  Entry i is rnd for lambda = 2^i^, that is for `vtype.lambda[2:0]` = i + 1:
+
+  * `frm`: the partial sum is rounded to the C format with the rounding mode in `frm`.
+  * `rto`: the partial sum is rounded to the C format with round-to-odd.
+  * `xct`: the partial sum is not rounded before the final accumulation.
+  * `none`: lambda = 2^i^ is not in `<%= supported %>`.
+<%- end -%>
+
+  The same value applies to every input and accumulator format, and to the
+  unscaled and microscaled forms, with this geometry. The integer-input
+  microscaled instructions do not use it.
+schema:
+  type: array
+<%- case quantity -%>
+<%- when "GROUPING" -%>
+  items:
+    type: integer
+    enum: [0, 1, 2, 4, 8, 16, 32, 64]
+<%- when "PSM" -%>
+  items:
+    type: boolean
+<%- when "RND" -%>
+  items:
+    type: string
+    enum: [none, frm, rto, xct]
+<%- end -%>
+  minItems: 7
+  maxItems: 7
+definedBy:
+  extension:
+<%- if exts.size == 1 -%>
+    name: <%= exts.first %>
+<%- else -%>
+    anyOf:
+<%-   exts.each do |ext| -%>
+      - name: <%= ext %>
+<%-   end -%>
+<%- end -%>
+requirements:
+  idl(): |
+<%- lambdas.each_with_index do |lambda, i| -%>
+<%-   case quantity -%>
+<%-   when "GROUPING" -%>
+    $array_includes?(<%= supported %>, <%= lambda %>) -> ((<%= name %>[<%= i %>] != 0) && (<%= name %>[<%= i %>] <= <%= lambda %>));
+    !$array_includes?(<%= supported %>, <%= lambda %>) -> (<%= name %>[<%= i %>] == 0);
+<%-   when "PSM" -%>
+    !$array_includes?(<%= supported %>, <%= lambda %>) -> !<%= name %>[<%= i %>];
+    <%= name %>[<%= i %>] -> (ZVVM_FP_PSM1_ALGORITHM != "none");
+<%-   when "RND" -%>
+    $array_includes?(<%= supported %>, <%= lambda %>) -> (<%= name %>[<%= i %>] != "none");
+    !$array_includes?(<%= supported %>, <%= lambda %>) -> (<%= name %>[<%= i %>] == "none");
+<%-   end -%>
+<%- end -%>
+  reason: |
+<%- if quantity == "PSM" -%>
+    An entry is true only for a supported lambda, and only when ZVVM_FP_PSM1_ALGORITHM names the reduction.
+<%- elsif quantity == "GROUPING" -%>
+    G is disclosed exactly for each lambda in <%= supported %>, and G is not larger than lambda.
+<%- else -%>
+    A value is disclosed exactly for each lambda in <%= supported %>.
+<%- end -%>
