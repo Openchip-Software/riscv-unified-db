@@ -1,0 +1,67 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../../schemas/inst_schema.json
+
+$schema: "inst_schema.json#"
+kind: instruction
+name: vmtts.v
+long_name: Transposing Matrix Tile Store
+description: |
+  Stores a two-dimensional array of `SEW`-bit storage elements from a
+  vector register group to memory, applying the inverse storage-element
+  transposition of `vmttl.v`.
+
+  The instruction does not unpack, transpose, or repack logical elements
+  contained within an `SEW`-bit storage element.
+
+  `xs1` holds the matrix base address; `xs2` holds the leading dimension `LD` in elements of width SEW.
+  If `xs2` holds zero (0), the leading dimension `LD` is set to VLEN / (SEW × LAMBDA).
+  The parameter LAMBDA refers to the source matrix tile of the transposing store operation.
+  When the lambda field is specified, it overrides `lambda[2:0]` from `vtype` for this instruction.
+  Inactive elements (masked off) are not written to memory and do not raise exceptions.
+  Tail elements (index ≥ VL) are not written to memory and do not raise exceptions.
+
+  Let _linesize_ = LAMBDA × LMUL.
+  For each element index `i` in the body `[vstart, VL)` where the mask is enabled:
+
+      M[xs1 + (SEW ÷ 8) × ((i % linesize) × LD + (i / linesize))] = VS[i]
+
+  The instruction raises the standard vector memory exceptions for active
+  elements.
+
+  _Illegal Instruction_ is raised if any of the following conditions hold:
+
+  * `vtype.vlmul` does not encode LMUL in {1, 2, 4, 8}.
+  * No effective lambda is selected.
+  * The effective lambda is not supported for the current
+    (`VLEN`, `SEW`) configuration. A nonzero instruction lambda
+    field is checked exactly and is not WARL-clamped.
+  * `VL` is not a multiple of `effective_lambda * LMUL`.
+  * `vs3` is not aligned for LMUL, or its register group extends past `v31`.
+
+  A nonzero `vstart` value is legal and is not an illegal-instruction
+  condition.
+definedBy:
+  extension:
+    name: Zvvmttls
+assembly: vs3, (xs1), xs2, lambda, vm
+encoding:
+  match: ---101-----------111-----0100111
+  variables:
+    - name: lambda
+      location: 31-29
+    - name: vm
+      location: 25
+    - name: xs2
+      location: 24-20
+    - name: xs1
+      location: 19-15
+    - name: vs3
+      location: 11-7
+access:
+  s: always
+  u: always
+  vs: always
+  vu: always
+data_independent_timing: false

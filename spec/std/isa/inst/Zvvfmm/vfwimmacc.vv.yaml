@@ -1,0 +1,73 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../../schemas/inst_schema.json
+
+$schema: "inst_schema.json#"
+kind: instruction
+name: vfwimmacc.vv
+long_name: Integer-Input Widening Floating-Point-Accumulate Matrix Multiply-Accumulate with Microscaling
+description: |
+  Interpreting `vs1` as A~tile~ and `vs2` as
+  B~tile~^T^, the instruction computes the exact integer
+  tile product
+
+  T = A~tile~ × B~tile~^T^
+
+  block by block, scales each block by the paired scale factors in `v0`,
+  and accumulates the scaled result into `vd`: C ← C + scale_A × scale_B × T.
+  The widening factor is 2 applied to the K dimension.
+
+  `vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+  and `vd` as an M×M physical FP accumulator tile (row-major
+  register layout), of which only the first N columns are active.
+  `vs1` and `vs2` have integer elements of width SEW÷2; `vd` has FP elements of width SEW.
+
+  K_effective = LAMBDA × 2 × LMUL.
+  `VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+  The remaining columns of the physical C tile are C tile tail elements.
+  MXINT inputs are always signed; `altfmt_A` and `altfmt_B` must be 0.
+  `altfmt` selects the FP format of the accumulator C.
+
+  The register `v0` supplies paired block-scale factors using the same
+  tile-strided layout as `vfwmmacc.vv` (see the microscaling section of the Zvvm specification).
+  The `bs` field in `vtype` selects the block size (32 or 16 elements).
+
+  The encodings SEW=8 (EEW=4, Int4 inputs into OFP8 accumulator), SEW=32, and SEW=64 are _reserved_.
+
+  _Illegal Instruction_ is raised if any of the following conditions hold:
+
+  * `vstart` ≠ 0.
+  * SEW = 8 (reserved encoding).
+  * SEW = 32 (reserved encoding).
+  * SEW = 64 (reserved encoding).
+  * `altfmt_A` = 1 (reserved; MXINT inputs are signed).
+  * `altfmt_B` = 1 (reserved; MXINT inputs are signed).
+  * The selected MX cell in the integer MX encoding map is `_reserved_`, or the extension named by that cell is not implemented.
+  * VL is not a multiple of LAMBDA × LMUL.
+  * EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+  * `vs1` or `vs2` is not aligned for LMUL.
+  * `vd` is not aligned for EMUL_C.
+  * The `vd` register group overlaps the `vs1` or `vs2` register group.
+  * SEW × LAMBDA < 16.
+  * When `bs=1`: W × LMUL > SEW (i.e., 2 × LMUL > SEW).
+  * `vd`, `vs1`, or `vs2` overlaps `v0`.
+definedBy:
+  extension:
+    name: Zvvfmm
+assembly: vd, vs1, vs2, v0.scale
+encoding:
+  match: 1110010----------000-----1010111
+  variables:
+    - name: vs2
+      location: 24-20
+    - name: vs1
+      location: 19-15
+    - name: vd
+      location: 11-7
+access:
+  s: always
+  u: always
+  vs: always
+  vu: always
+data_independent_timing: false
