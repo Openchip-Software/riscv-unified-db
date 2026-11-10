@@ -1,0 +1,63 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../../schemas/inst_schema.json
+
+$schema: "inst_schema.json#"
+kind: instruction
+name: vfmmacc.vv
+long_name: Floating-Point Matrix Multiply-Accumulate
+description: |
+  Interpreting `vs1` as A~tile~ and `vs2` as
+  B~tile~^T^, the instruction computes
+
+  T = A~tile~ × B~tile~^T^
+
+  and accumulates T into `vd`: C ← C + T.
+
+  `vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+  and `vd` as an M×M physical accumulator tile (row-major register
+  layout), of which only the first N columns are active. All three tiles have elements of width SEW.
+
+  K_effective = LAMBDA × LMUL.
+  `VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+  The remaining columns of the physical C tile are C tile tail elements.
+  The floating-point format for A and B elements is selected independently by
+  `altfmt_A` and `altfmt_B` in `vtype` (see the mixed-format input rules of the Zvvm specification);
+  the C accumulator format is selected by `altfmt`.
+  Final accumulation into the C accumulator format uses the dynamic rounding mode from `frm`.
+  Any intermediate grouping, partial-sum formation, and optional rounding of partial sums follow the floating-point accumulation and rounding model of the Zvvm specification.
+  Floating-point exception flags accumulate in `fflags`.
+
+  Microscaling (`vm=0`) is not supported for non-widening floating-point
+  multiply-accumulate; `vm=0` is _reserved_.
+
+  _Illegal Instruction_ is raised if any of the following conditions hold:
+
+  * `vstart` ≠ 0.
+  * `vm` = 0 (_reserved_).
+  * VL is not a multiple of LAMBDA × LMUL.
+  * EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+  * `vs1` or `vs2` is not aligned for LMUL.
+  * `vd` is not aligned for EMUL_C.
+  * The `vd` register group overlaps the `vs1` or `vs2` register group.
+  * The selected row in the floating-point encoding map is marked `_reserved_`, or any extension named by that row is not implemented.
+definedBy:
+  extension:
+    name: Zvvfmm
+assembly: vd, vs1, vs2
+encoding:
+  match: 0101001----------001-----1010111
+  variables:
+    - name: vs2
+      location: 24-20
+    - name: vs1
+      location: 19-15
+    - name: vd
+      location: 11-7
+access:
+  s: always
+  u: always
+  vs: always
+  vu: always
+data_independent_timing: false

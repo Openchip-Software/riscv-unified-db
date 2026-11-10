@@ -1,0 +1,57 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../../schemas/inst_schema.json
+
+$schema: "inst_schema.json#"
+kind: instruction
+name: vmmacc.vv
+long_name: Integer Matrix Multiply-Accumulate
+description: |
+  Interpreting `vs1` as A~tile~ and `vs2` as
+  B~tile~^T^, the instruction computes
+
+  T = A~tile~ × B~tile~^T^
+
+  and accumulates T into `vd`: C ← C + T.
+
+  `vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+  and `vd` as an M×M physical accumulator tile (row-major register
+  layout), of which only the first N columns are active. All three tiles have elements of width SEW.
+
+  K_effective = LAMBDA × LMUL.
+  `VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+  The remaining columns of the physical C tile are C tile tail elements.
+  The signedness of each input operand is selected by `altfmt_A` and `altfmt_B` in `vtype`:
+  0 = signed, 1 = unsigned.
+  Accumulation is modular (wraps at 2^SEW^).
+
+  _Illegal Instruction_ is raised if any of the following conditions hold:
+
+  * `vstart` ≠ 0.
+  * `vm` = 0 (_reserved_).
+  * VL is not a multiple of LAMBDA × LMUL.
+  * EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+  * `vs1` or `vs2` is not aligned for LMUL.
+  * `vd` is not aligned for EMUL_C.
+  * The `vd` register group overlaps the `vs1` or `vs2` register group.
+  * The selected row in the integer encoding map is marked `_reserved_`, or the extension named by that row is not implemented.
+definedBy:
+  extension:
+    name: Zvvmm
+assembly: vd, vs1, vs2
+encoding:
+  match: 1110001----------000-----1010111
+  variables:
+    - name: vs2
+      location: 24-20
+    - name: vs1
+      location: 19-15
+    - name: vd
+      location: 11-7
+access:
+  s: always
+  u: always
+  vs: always
+  vu: always
+data_independent_timing: false
