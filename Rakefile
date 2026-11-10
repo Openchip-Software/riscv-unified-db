@@ -656,6 +656,33 @@ end
   end
 end
 
+# Zvvm floating-point disclosure parameters, one per quantity and (SEW, W) pair.
+# The pairs, and the extensions that define each parameter, come from the
+# unscaled floating-point extensions; the microscaling extensions imply those.
+IME_FP_GEOMETRIES = IME_TYPE_EXTENSIONS
+  .select { |e| e[:bs].nil? && IME_TYPES.fetch(e[:c])[:kind] == :fp }
+  .group_by do |e|
+    sew = IME_TYPES.fetch(e[:c])[:width]
+    [sew, sew / IME_TYPES.fetch(e[:a])[:width]]
+  end
+  .transform_values { |es| es.map { |e| ime_extension_name(e) } }
+  .sort.to_h.freeze
+
+IME_FP_GEOMETRIES.each do |(sew, w), exts|
+  %w[GROUPING PSM RND].each do |quantity|
+    file "#{$resolver.std_path}/param/ZVVM_FP_#{quantity}_SEW#{sew}_W#{w}.yaml" => [
+      "#{$resolver.std_path}/param/ZVVM_FP_DISCLOSURE.layout",
+      __FILE__
+    ] do |t|
+      FileUtils.rm_f(t.name)
+      erb = ERB.new(File.read($resolver.std_path / "param/ZVVM_FP_DISCLOSURE.layout"), trim_mode: "-")
+      erb.filename = "#{$resolver.std_path}/param/ZVVM_FP_DISCLOSURE.layout"
+      File.write(t.name, insert_warning(erb.result(binding), t.prerequisites.first))
+      File.chmod(0444, t.name)
+    end
+  end
+end
+
 def gen_arch_file(f)
   FileUtils.rm_f f
   Rake::Task[f].invoke
@@ -753,6 +780,13 @@ namespace :gen do
     # Generate Zvvm supported-lambda parameter files
     [8, 16, 32, 64].each do |sew|
       gen_arch_file("#{$resolver.std_path}/param/SUPPORTED_LAMBDA_SEW#{sew}.yaml")
+    end
+
+    # Generate Zvvm floating-point disclosure parameter files
+    IME_FP_GEOMETRIES.each_key do |(sew, w)|
+      %w[GROUPING PSM RND].each do |quantity|
+        gen_arch_file("#{$resolver.std_path}/param/ZVVM_FP_#{quantity}_SEW#{sew}_W#{w}.yaml")
+      end
     end
   end
 
