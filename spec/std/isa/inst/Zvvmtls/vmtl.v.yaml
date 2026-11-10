@@ -1,0 +1,68 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../../schemas/inst_schema.json
+
+$schema: "inst_schema.json#"
+kind: instruction
+name: vmtl.v
+long_name: Order-Preserving Matrix Tile Load
+description: |
+  Loads a 2D matrix tile from memory into the vector register group starting at `vd`.
+  `xs1` holds the matrix base address; `xs2` holds the leading dimension `LD` in elements of width SEW.
+  If `xs2` holds zero (0), the leading dimension `LD` is set to LAMBDA × LMUL.
+  When the lambda field is specified, it overrides `lambda[2:0]` from `vtype` for this instruction.
+  Inactive elements (masked off) are left undisturbed in the destination register.
+  Tail elements (index ≥ VL) are left undisturbed in the destination register.
+  The tail-agnostic (`vtype.vta`) and mask-agnostic (`vtype.vma`) fill policies do not apply to tile loads.
+  Neither inactive nor tail elements raise memory exceptions.
+
+  Let _linesize_ = LAMBDA × LMUL.
+  For each element index `i` in the body `[vstart, VL)` where the mask is enabled:
+
+      VD[i] = M[xs1 + (SEW ÷ 8) × ((i / linesize) × LD + (i % linesize))]
+
+  This is the correct load variant when A is stored in row-major order or when B is stored in
+  column-major order: in both cases the memory layout consists of _linesize_-element
+  contiguous segments with a stride of `LD` elements between them.
+  For LMUL=1 this simplifies to LAMBDA-element segments.
+
+  The instruction raises the standard vector memory exceptions for active
+  elements.
+
+  _Illegal Instruction_ is raised if any of the following conditions hold:
+
+  * `vtype.vlmul` does not encode LMUL in {1, 2, 4, 8}.
+  * No effective lambda is selected.
+  * The effective lambda is not supported for the current
+    (`VLEN`, `SEW`) configuration. A nonzero instruction lambda
+    field is checked exactly and is not WARL-clamped.
+  * `VL` is not a multiple of `effective_lambda * LMUL`.
+  * `vd` is not aligned for LMUL, or its register group extends past `v31`.
+  * `vm=0` and the destination register group overlaps `v0`.
+
+  A nonzero `vstart` value is legal and is not an illegal-instruction
+  condition.
+definedBy:
+  extension:
+    name: Zvvmtls
+assembly: vd, (xs1), xs2, lambda, vm
+encoding:
+  match: ---100-----------111-----0000111
+  variables:
+    - name: lambda
+      location: 31-29
+    - name: vm
+      location: 25
+    - name: xs2
+      location: 24-20
+    - name: xs1
+      location: 19-15
+    - name: vd
+      location: 11-7
+access:
+  s: always
+  u: always
+  vs: always
+  vu: always
+data_independent_timing: false

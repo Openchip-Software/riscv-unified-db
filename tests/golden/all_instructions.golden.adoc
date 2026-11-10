@@ -39887,6 +39887,90 @@ Additionally, this instruction requires the following:
 xlen+++()+++ == 32
 
 
+[#udb:doc:inst:v8wmmacc_vv]
+== v8wmmacc.vv
+
+Synopsis::
+Integer 8× Widening Matrix Multiply-Accumulate
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+v8wmmacc.vv vd, vs1, vs2
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x57,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x0,"type":2},{"bits":5,"name": "vs1","type":4},{"bits":5,"name": "vs2","type":4},{"bits":7,"name": 0x77,"type":2}]}
+....
+
+Description::
+Interpreting `vs1` as A~tile~ and `vs2` as
+B~tile~^T^, the instruction computes
+
+T = A~tile~ × B~tile~^T^
+
+and accumulates T into `vd`:
+C ← C + T,
+with a widening factor of 8 applied to the K dimension.
+
+`vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+and `vd` as an M×M physical accumulator tile (row-major register
+layout), of which only the first N columns are active.
+`vs1` and `vs2` have elements of width SEW÷8; `vd` has elements of width SEW.
+
+K_effective = LAMBDA × 8 × LMUL.
+`VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+The remaining columns of the physical C tile are C tile tail elements.
+The signedness of each input operand is selected by `altfmt_A` and `altfmt_B` in xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype]:
+0 = signed, 1 = unsigned.
+Accumulation is modular (wraps at 2^SEW^).
+
+Only SEW ∈ {32, 64} is valid (giving EEW = 4 or 8); SEW ∈ {8, 16} is _reserved_.
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* SEW < 32 (EEW = SEW÷8 would be sub-nibble).
+* VL is not a multiple of LAMBDA × LMUL.
+* EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+* `vs1` or `vs2` is not aligned for LMUL.
+* `vd` is not aligned for EMUL_C.
+* The `vd` register group overlaps the `vs1` or `vs2` register group.
+* When `vm=1`: the selected row in the integer encoding map is marked `_reserved_`, or the extension named by that row is not implemented.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|vs2 |$encoding[24:20]
+|vs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvmm*
+| any
+|===
+
+
+
+
 [#udb:doc:inst:vaadd_vv]
 == vaadd.vv
 
@@ -42869,6 +42953,195 @@ Included in::
 
 
 
+[#udb:doc:inst:vf8wimmacc_vv]
+== vf8wimmacc.vv
+
+Synopsis::
+Integer-Input 8× Widening Floating-Point-Accumulate Matrix Multiply-Accumulate with Microscaling
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vf8wimmacc.vv vd, vs1, vs2, v0.scale
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x57,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x0,"type":2},{"bits":5,"name": "vs1","type":4},{"bits":5,"name": "vs2","type":4},{"bits":7,"name": 0x76,"type":2}]}
+....
+
+Description::
+Interpreting `vs1` as A~tile~ and `vs2` as
+B~tile~^T^, the instruction computes the exact integer
+tile product
+
+T = A~tile~ × B~tile~^T^
+
+block by block, scales each block by the paired scale factors in `v0`,
+and accumulates the scaled result into `vd`: C ← C + scale_A × scale_B × T.
+The widening factor is 8 applied to the K dimension.
+
+`vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+and `vd` as an M×M physical FP accumulator tile (row-major
+register layout), of which only the first N columns are active.
+`vs1` and `vs2` have integer elements of width SEW÷8; `vd` has FP elements of width SEW.
+
+K_effective = LAMBDA × 8 × LMUL.
+`VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+The remaining columns of the physical C tile are C tile tail elements.
+MXINT inputs are always signed; `altfmt_A` and `altfmt_B` must be 0.
+`altfmt` selects the FP format of the accumulator C.
+
+The register `v0` supplies paired block-scale factors using the same
+tile-strided layout as xref:insts:vf8wmmacc_vv.adoc#udb:doc:inst:vf8wmmacc_vv[vf8wmmacc.vv] (see the microscaling section of the Zvvm specification).
+The `bs` field in xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype] selects the block size (32 or 16 elements).
+
+Only SEW ∈ {32, 64} is valid; SEW ∈ {8, 16} is _reserved_.
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* SEW < 32 (reserved encoding).
+* `altfmt_A` = 1 (reserved; MXINT inputs are signed).
+* `altfmt_B` = 1 (reserved; MXINT inputs are signed).
+* The selected MX cell in the integer MX encoding map is `_reserved_`, or the extension named by that cell is not implemented.
+* VL is not a multiple of LAMBDA × LMUL.
+* EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+* `vs1` or `vs2` is not aligned for LMUL.
+* `vd` is not aligned for EMUL_C.
+* The `vd` register group overlaps the `vs1` or `vs2` register group.
+* SEW × LAMBDA < 16.
+* When `bs=1`: W × LMUL > SEW (i.e., 8 × LMUL > SEW).
+* `vd`, `vs1`, or `vs2` overlaps `v0`.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|vs2 |$encoding[24:20]
+|vs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvfmm*
+| any
+|===
+
+
+
+
+[#udb:doc:inst:vf8wmmacc_vv]
+== vf8wmmacc.vv
+
+Synopsis::
+Floating-Point 8× Widening Matrix Multiply-Accumulate
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vf8wmmacc.vv vd, vs1, vs2, vm
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x57,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x1,"type":2},{"bits":5,"name": "vs1","type":4},{"bits":5,"name": "vs2","type":4},{"bits":1,"name": "vm","type":4},{"bits":6,"name": 0x17,"type":2}]}
+....
+
+Description::
+Interpreting `vs1` as A~tile~ and `vs2` as
+B~tile~^T^, the instruction computes
+
+T = A~tile~ × B~tile~^T^
+
+and accumulates T into `vd`: C ← C + T,
+with a widening factor of 8 applied to the K dimension.
+
+`vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+and `vd` as an M×M physical accumulator tile (row-major register
+layout), of which only the first N columns are active.
+`vs1` and `vs2` have elements of width SEW÷8; `vd` has elements of width SEW.
+
+K_effective = LAMBDA × 8 × LMUL.
+`VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+The remaining columns of the physical C tile are C tile tail elements.
+The floating-point format for A and B elements is selected independently by
+`altfmt_A` and `altfmt_B`, interpreted for input element width SEW÷8; the C
+format is selected by `altfmt`, interpreted for width SEW.
+Final accumulation into the C accumulator format uses the dynamic rounding mode from xref:csrs:frm.adoc#udb:doc:csr:frm[frm].
+Any intermediate grouping, partial-sum formation, and optional rounding of partial sums follow the floating-point accumulation and rounding model of the Zvvm specification.
+Floating-point exception flags accumulate in xref:csrs:fflags.adoc#udb:doc:csr:fflags[fflags].
+
+When `vm=0` (`v0.scale`), the register `v0` supplies paired block-scale
+factors for microscaling; the scale format is determined by the input data
+type (see the microscaling section of the Zvvm specification). The `bs` field in xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype]
+selects the block size (32 or 16 elements).
+
+Only SEW ∈ {32, 64} is valid (giving EEW = 4 or 8); SEW ∈ {8, 16} is _reserved_.
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* SEW < 32 (EEW = SEW÷8 would be sub-nibble).
+* VL is not a multiple of LAMBDA × LMUL.
+* EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+* `vs1` or `vs2` is not aligned for LMUL.
+* `vd` is not aligned for EMUL_C.
+* The `vd` register group overlaps the `vs1` or `vs2` register group.
+* When `vm=0`: the selected MX cell in the floating-point encoding map is `—` or `_reserved_`, or any required extension named by that cell is not implemented.
+* When `vm=0`: SEW × LAMBDA < 16.
+* When `vm=0` and `bs=1`: W × LMUL > SEW (i.e., 8 × LMUL > SEW).
+* When `vm=0`: `vd`, `vs1`, or `vs2` overlaps `v0`.
+* When `vm=1`: the selected row in the floating-point encoding map is marked `_reserved_`, or any extension named by that row is not implemented.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|vm |$encoding[25]
+|vs2 |$encoding[24:20]
+|vs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvfmm*
+| any
+|===
+
+
+
+
 [#udb:doc:inst:vfadd_vf]
 == vfadd.vf
 
@@ -44114,6 +44387,91 @@ Included in::
 | Extension | Version
 
 | *Zvl32b*
+| any
+|===
+
+
+
+
+[#udb:doc:inst:vfmmacc_vv]
+== vfmmacc.vv
+
+Synopsis::
+Floating-Point Matrix Multiply-Accumulate
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vfmmacc.vv vd, vs1, vs2
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x57,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x1,"type":2},{"bits":5,"name": "vs1","type":4},{"bits":5,"name": "vs2","type":4},{"bits":7,"name": 0x29,"type":2}]}
+....
+
+Description::
+Interpreting `vs1` as A~tile~ and `vs2` as
+B~tile~^T^, the instruction computes
+
+T = A~tile~ × B~tile~^T^
+
+and accumulates T into `vd`: C ← C + T.
+
+`vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+and `vd` as an M×M physical accumulator tile (row-major register
+layout), of which only the first N columns are active. All three tiles have elements of width SEW.
+
+K_effective = LAMBDA × LMUL.
+`VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+The remaining columns of the physical C tile are C tile tail elements.
+The floating-point format for A and B elements is selected independently by
+`altfmt_A` and `altfmt_B` in xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype] (see the mixed-format input rules of the Zvvm specification);
+the C accumulator format is selected by `altfmt`.
+Final accumulation into the C accumulator format uses the dynamic rounding mode from xref:csrs:frm.adoc#udb:doc:csr:frm[frm].
+Any intermediate grouping, partial-sum formation, and optional rounding of partial sums follow the floating-point accumulation and rounding model of the Zvvm specification.
+Floating-point exception flags accumulate in xref:csrs:fflags.adoc#udb:doc:csr:fflags[fflags].
+
+Microscaling (`vm=0`) is not supported for non-widening floating-point
+multiply-accumulate; `vm=0` is _reserved_.
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* `vm` = 0 (_reserved_).
+* VL is not a multiple of LAMBDA × LMUL.
+* EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+* `vs1` or `vs2` is not aligned for LMUL.
+* `vd` is not aligned for EMUL_C.
+* The `vd` register group overlaps the `vs1` or `vs2` register group.
+* The selected row in the floating-point encoding map is marked `_reserved_`, or any extension named by that row is not implemented.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|vs2 |$encoding[24:20]
+|vs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvfmm*
 | any
 |===
 
@@ -45636,6 +45994,198 @@ Included in::
 | Extension | Version
 
 | *Zvl32b*
+| any
+|===
+
+
+
+
+[#udb:doc:inst:vfqimmacc_vv]
+== vfqimmacc.vv
+
+Synopsis::
+Integer-Input Quad-Widening Floating-Point-Accumulate Matrix Multiply-Accumulate with Microscaling
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vfqimmacc.vv vd, vs1, vs2, v0.scale
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x57,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x0,"type":2},{"bits":5,"name": "vs1","type":4},{"bits":5,"name": "vs2","type":4},{"bits":7,"name": 0x74,"type":2}]}
+....
+
+Description::
+Interpreting `vs1` as A~tile~ and `vs2` as
+B~tile~^T^, the instruction computes the exact integer
+tile product
+
+T = A~tile~ × B~tile~^T^
+
+block by block, scales each block by the paired scale factors in `v0`,
+and accumulates the scaled result into `vd`: C ← C + scale_A × scale_B × T.
+The widening factor is 4 applied to the K dimension.
+
+`vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+and `vd` as an M×M physical FP accumulator tile (row-major
+register layout), of which only the first N columns are active.
+`vs1` and `vs2` have integer elements of width SEW÷4; `vd` has FP elements of width SEW.
+
+K_effective = LAMBDA × 4 × LMUL.
+`VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+The remaining columns of the physical C tile are C tile tail elements.
+MXINT inputs are always signed; `altfmt_A` and `altfmt_B` must be 0.
+`altfmt` selects the FP format of the accumulator C.
+
+The register `v0` supplies paired block-scale factors using the same
+tile-strided layout as xref:insts:vqmmacc_vv.adoc#udb:doc:inst:vqmmacc_vv[vqmmacc.vv] (see the microscaling section of the Zvvm specification).
+The `bs` field in xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype] selects the block size (32 or 16 elements).
+
+The encodings SEW=8 (EEW=2), altfmt=1 with SEW=32, and SEW=64 are _reserved_.
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* SEW = 8 (reserved encoding).
+* SEW = 32 and `altfmt` = 1 (reserved).
+* SEW = 64 (reserved encoding).
+* `altfmt_A` = 1 (reserved; MXINT inputs are signed).
+* `altfmt_B` = 1 (reserved; MXINT inputs are signed).
+* The selected MX cell in the integer MX encoding map is `_reserved_`, or the extension named by that cell is not implemented.
+* VL is not a multiple of LAMBDA × LMUL.
+* EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+* `vs1` or `vs2` is not aligned for LMUL.
+* `vd` is not aligned for EMUL_C.
+* The `vd` register group overlaps the `vs1` or `vs2` register group.
+* SEW × LAMBDA < 16.
+* When `bs=1`: W × LMUL > SEW (i.e., 4 × LMUL > SEW).
+* `vd`, `vs1`, or `vs2` overlaps `v0`.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|vs2 |$encoding[24:20]
+|vs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvfmm*
+| any
+|===
+
+
+
+
+[#udb:doc:inst:vfqmmacc_vv]
+== vfqmmacc.vv
+
+Synopsis::
+Floating-Point Quad-Widening Matrix Multiply-Accumulate
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vfqmmacc.vv vd, vs1, vs2, vm
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x57,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x1,"type":2},{"bits":5,"name": "vs1","type":4},{"bits":5,"name": "vs2","type":4},{"bits":1,"name": "vm","type":4},{"bits":6,"name": 0x16,"type":2}]}
+....
+
+Description::
+Interpreting `vs1` as A~tile~ and `vs2` as
+B~tile~^T^, the instruction computes
+
+T = A~tile~ × B~tile~^T^
+
+and accumulates T into `vd`: C ← C + T,
+with a widening factor of 4 applied to the K dimension.
+
+`vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+and `vd` as an M×M physical accumulator tile (row-major register
+layout), of which only the first N columns are active.
+`vs1` and `vs2` have elements of width SEW÷4; `vd` has elements of width SEW.
+
+K_effective = LAMBDA × 4 × LMUL.
+`VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+The remaining columns of the physical C tile are C tile tail elements.
+The floating-point format for A and B elements is selected independently by
+`altfmt_A` and `altfmt_B`, interpreted for input element width SEW÷4; the C
+format is selected by `altfmt`, interpreted for width SEW.
+Final accumulation into the C accumulator format uses the dynamic rounding mode from xref:csrs:frm.adoc#udb:doc:csr:frm[frm].
+Any intermediate grouping, partial-sum formation, and optional rounding of partial sums follow the floating-point accumulation and rounding model of the Zvvm specification.
+Floating-point exception flags accumulate in xref:csrs:fflags.adoc#udb:doc:csr:fflags[fflags].
+
+When `vm=0` (`v0.scale`), the register `v0` supplies paired block-scale
+factors for microscaling; the scale format is determined by the input data
+type (see the microscaling section of the Zvvm specification). The `bs` field in xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype]
+selects the block size (32 or 16 elements).
+Only `SEW ∈ {16, 32, 64}` is valid, giving
+`EEW = SEW ÷ 4 ∈ {4, 8, 16}`.
+`SEW = 8`, which would imply `EEW = 2`, is _reserved_.
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* `SEW = 8` (`EEW = SEW ÷ 4 = 2` is reserved).
+* VL is not a multiple of LAMBDA × LMUL.
+* EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+* `vs1` or `vs2` is not aligned for LMUL.
+* `vd` is not aligned for EMUL_C.
+* The `vd` register group overlaps the `vs1` or `vs2` register group.
+* When `vm=0`: the selected MX cell in the floating-point encoding map is `—` or `_reserved_`, or any required extension named by that cell is not implemented.
+* When `vm=0`: SEW × LAMBDA < 16.
+* When `vm=0` and `bs=1`: W × LMUL > SEW.
+* When `vm=0`: `vd`, `vs1`, or `vs2` overlaps `v0`.
+* When `vm=1`: the selected row in the floating-point encoding map is marked `_reserved_`, or any extension named by that row is not implemented.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|vm |$encoding[25]
+|vs2 |$encoding[24:20]
+|vs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvfmm*
 | any
 |===
 
@@ -47269,6 +47819,101 @@ xref:exts:Zvfbfmin.adoc#udb:doc:ext:Zvfbfmin[Zvfbfmin]
 xref:exts:Zvfofp8min.adoc#udb:doc:ext:Zvfofp8min[Zvfofp8min]
 
 
+[#udb:doc:inst:vfwimmacc_vv]
+== vfwimmacc.vv
+
+Synopsis::
+Integer-Input Widening Floating-Point-Accumulate Matrix Multiply-Accumulate with Microscaling
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vfwimmacc.vv vd, vs1, vs2, v0.scale
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x57,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x0,"type":2},{"bits":5,"name": "vs1","type":4},{"bits":5,"name": "vs2","type":4},{"bits":7,"name": 0x72,"type":2}]}
+....
+
+Description::
+Interpreting `vs1` as A~tile~ and `vs2` as
+B~tile~^T^, the instruction computes the exact integer
+tile product
+
+T = A~tile~ × B~tile~^T^
+
+block by block, scales each block by the paired scale factors in `v0`,
+and accumulates the scaled result into `vd`: C ← C + scale_A × scale_B × T.
+The widening factor is 2 applied to the K dimension.
+
+`vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+and `vd` as an M×M physical FP accumulator tile (row-major
+register layout), of which only the first N columns are active.
+`vs1` and `vs2` have integer elements of width SEW÷2; `vd` has FP elements of width SEW.
+
+K_effective = LAMBDA × 2 × LMUL.
+`VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+The remaining columns of the physical C tile are C tile tail elements.
+MXINT inputs are always signed; `altfmt_A` and `altfmt_B` must be 0.
+`altfmt` selects the FP format of the accumulator C.
+
+The register `v0` supplies paired block-scale factors using the same
+tile-strided layout as xref:insts:vfwmmacc_vv.adoc#udb:doc:inst:vfwmmacc_vv[vfwmmacc.vv] (see the microscaling section of the Zvvm specification).
+The `bs` field in xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype] selects the block size (32 or 16 elements).
+
+The encodings SEW=8 (EEW=4, Int4 inputs into OFP8 accumulator), SEW=32, and SEW=64 are _reserved_.
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* SEW = 8 (reserved encoding).
+* SEW = 32 (reserved encoding).
+* SEW = 64 (reserved encoding).
+* `altfmt_A` = 1 (reserved; MXINT inputs are signed).
+* `altfmt_B` = 1 (reserved; MXINT inputs are signed).
+* The selected MX cell in the integer MX encoding map is `_reserved_`, or the extension named by that cell is not implemented.
+* VL is not a multiple of LAMBDA × LMUL.
+* EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+* `vs1` or `vs2` is not aligned for LMUL.
+* `vd` is not aligned for EMUL_C.
+* The `vd` register group overlaps the `vs1` or `vs2` register group.
+* SEW × LAMBDA < 16.
+* When `bs=1`: W × LMUL > SEW (i.e., 2 × LMUL > SEW).
+* `vd`, `vs1`, or `vs2` overlaps `v0`.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|vs2 |$encoding[24:20]
+|vs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvfmm*
+| any
+|===
+
+
+
+
 [#udb:doc:inst:vfwmacc_vf]
 == vfwmacc.vf
 
@@ -47475,6 +48120,99 @@ Included in::
 | Extension | Version
 
 | *Zvfbfwma*
+| any
+|===
+
+
+
+
+[#udb:doc:inst:vfwmmacc_vv]
+== vfwmmacc.vv
+
+Synopsis::
+Floating-Point Widening Matrix Multiply-Accumulate
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vfwmmacc.vv vd, vs1, vs2, vm
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x57,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x1,"type":2},{"bits":5,"name": "vs1","type":4},{"bits":5,"name": "vs2","type":4},{"bits":1,"name": "vm","type":4},{"bits":6,"name": 0x15,"type":2}]}
+....
+
+Description::
+Interpreting `vs1` as A~tile~ and `vs2` as
+B~tile~^T^, the instruction computes
+
+T = A~tile~ × B~tile~^T^
+
+and accumulates T into `vd`: C ← C + T,
+with a widening factor of 2 applied to the K dimension.
+
+`vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+and `vd` as an M×M physical accumulator tile (row-major register
+layout), of which only the first N columns are active.
+`vs1` and `vs2` have elements of width SEW÷2; `vd` has elements of width SEW.
+
+K_effective = LAMBDA × 2 × LMUL.
+`VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+The remaining columns of the physical C tile are C tile tail elements.
+The floating-point format for A and B elements is selected independently by
+`altfmt_A` and `altfmt_B`, interpreted for input element width SEW÷2; the C
+format is selected by `altfmt`, interpreted for width SEW.
+Final accumulation into the C accumulator format uses the dynamic rounding mode from xref:csrs:frm.adoc#udb:doc:csr:frm[frm].
+Any intermediate grouping, partial-sum formation, and optional rounding of partial sums follow the floating-point accumulation and rounding model of the Zvvm specification.
+Floating-point exception flags accumulate in xref:csrs:fflags.adoc#udb:doc:csr:fflags[fflags].
+
+When `vm=0` (`v0.scale`), the register `v0` supplies paired block-scale
+factors for microscaling; the scale format is determined by the input data
+type (see the microscaling section of the Zvvm specification). The `bs` field in xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype]
+selects the block size (32 or 16 elements).
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* VL is not a multiple of LAMBDA × LMUL.
+* EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+* `vs1` or `vs2` is not aligned for LMUL.
+* `vd` is not aligned for EMUL_C.
+* The `vd` register group overlaps the `vs1` or `vs2` register group.
+* When `vm=0`: the selected MX cell in the floating-point encoding map is `—` or `_reserved_`, or any required extension named by that cell is not implemented.
+* When `vm=0`: SEW × LAMBDA < 16.
+* When `vm=0` and `bs=1`: W × LMUL > SEW.
+* When `vm=0`: `vd`, `vs1`, or `vs2` overlaps `v0`.
+* When `vm=1`: the selected row in the floating-point encoding map is marked `_reserved_`, or any extension named by that row is not implemented.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|vm |$encoding[25]
+|vs2 |$encoding[24:20]
+|vs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvfmm*
 | any
 |===
 
@@ -59450,6 +60188,85 @@ Included in::
 
 
 
+[#udb:doc:inst:vmmacc_vv]
+== vmmacc.vv
+
+Synopsis::
+Integer Matrix Multiply-Accumulate
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vmmacc.vv vd, vs1, vs2
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x57,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x0,"type":2},{"bits":5,"name": "vs1","type":4},{"bits":5,"name": "vs2","type":4},{"bits":7,"name": 0x71,"type":2}]}
+....
+
+Description::
+Interpreting `vs1` as A~tile~ and `vs2` as
+B~tile~^T^, the instruction computes
+
+T = A~tile~ × B~tile~^T^
+
+and accumulates T into `vd`: C ← C + T.
+
+`vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+and `vd` as an M×M physical accumulator tile (row-major register
+layout), of which only the first N columns are active. All three tiles have elements of width SEW.
+
+K_effective = LAMBDA × LMUL.
+`VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+The remaining columns of the physical C tile are C tile tail elements.
+The signedness of each input operand is selected by `altfmt_A` and `altfmt_B` in xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype]:
+0 = signed, 1 = unsigned.
+Accumulation is modular (wraps at 2^SEW^).
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* `vm` = 0 (_reserved_).
+* VL is not a multiple of LAMBDA × LMUL.
+* EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+* `vs1` or `vs2` is not aligned for LMUL.
+* `vd` is not aligned for EMUL_C.
+* The `vd` register group overlaps the `vs1` or `vs2` register group.
+* The selected row in the integer encoding map is marked `_reserved_`, or the extension named by that row is not implemented.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|vs2 |$encoding[24:20]
+|vs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvmm*
+| any
+|===
+
+
+
+
 [#udb:doc:inst:vmnand_mm]
 == vmnand.mm
 
@@ -61076,6 +61893,358 @@ Included in::
 | Extension | Version
 
 | *Zvl32b*
+| any
+|===
+
+
+
+
+[#udb:doc:inst:vmtl_v]
+== vmtl.v
+
+Synopsis::
+Order-Preserving Matrix Tile Load
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vmtl.v vd, (xs1), xs2, lambda, vm
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x7,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x7,"type":2},{"bits":5,"name": "xs1","type":4},{"bits":5,"name": "xs2","type":4},{"bits":1,"name": "vm","type":4},{"bits":3,"name": 0x4,"type":2},{"bits":3,"name": "lambda","type":4}]}
+....
+
+Description::
+Loads a 2D matrix tile from memory into the vector register group starting at `vd`.
+`xs1` holds the matrix base address; `xs2` holds the leading dimension `LD` in elements of width SEW.
+If `xs2` holds zero (0), the leading dimension `LD` is set to LAMBDA × LMUL.
+When the lambda field is specified, it overrides `lambda[2:0]` from xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype] for this instruction.
+Inactive elements (masked off) are left undisturbed in the destination register.
+Tail elements (index ≥ VL) are left undisturbed in the destination register.
+The tail-agnostic (xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype]) and mask-agnostic (xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype]) fill policies do not apply to tile loads.
+Neither inactive nor tail elements raise memory exceptions.
+
+Let _linesize_ = LAMBDA × LMUL.
+For each element index `i` in the body `[vstart, VL)` where the mask is enabled:
+
+    VD[i] = M[xs1 + (SEW ÷ 8) × ((i / linesize) × LD + (i % linesize))]
+
+This is the correct load variant when A is stored in row-major order or when B is stored in
+column-major order: in both cases the memory layout consists of _linesize_-element
+contiguous segments with a stride of `LD` elements between them.
+For LMUL=1 this simplifies to LAMBDA-element segments.
+
+The instruction raises the standard vector memory exceptions for active
+elements.
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype] does not encode LMUL in {1, 2, 4, 8}.
+* No effective lambda is selected.
+* The effective lambda is not supported for the current
+  (`VLEN`, `SEW`) configuration. A nonzero instruction lambda
+  field is checked exactly and is not WARL-clamped.
+* `VL` is not a multiple of `effective_lambda * LMUL`.
+* `vd` is not aligned for LMUL, or its register group extends past `v31`.
+* `vm=0` and the destination register group overlaps `v0`.
+
+A nonzero xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] value is legal and is not an illegal-instruction
+condition.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|lambda |$encoding[31:29]
+|vm |$encoding[25]
+|xs2 |$encoding[24:20]
+|xs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvmtls*
+| any
+|===
+
+
+
+
+[#udb:doc:inst:vmts_v]
+== vmts.v
+
+Synopsis::
+Order-Preserving Matrix Tile Store
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vmts.v vs3, (xs1), xs2, lambda, vm
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x27,"type":2},{"bits":5,"name": "vs3","type":4},{"bits":3,"name": 0x7,"type":2},{"bits":5,"name": "xs1","type":4},{"bits":5,"name": "xs2","type":4},{"bits":1,"name": "vm","type":4},{"bits":3,"name": 0x4,"type":2},{"bits":3,"name": "lambda","type":4}]}
+....
+
+Description::
+Stores the 2D matrix tile held in the vector register group starting at `vs3` to memory.
+`xs1` holds the matrix base address; `xs2` holds the leading dimension `LD` in elements of width SEW.
+If `xs2` holds zero (0), the leading dimension `LD` is set to LAMBDA × LMUL.
+When the lambda field is specified, it overrides `lambda[2:0]` from xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype] for this instruction.
+Inactive elements (masked off) are not written to memory and do not raise exceptions.
+Tail elements (index ≥ VL) are not written to memory and do not raise exceptions.
+
+Let _linesize_ = LAMBDA × LMUL.
+For each element index `i` in the body `[vstart, VL)` where the mask is enabled:
+
+    M[xs1 + (SEW ÷ 8) × ((i / linesize) × LD + (i % linesize))] = VS[i]
+
+The instruction raises the standard vector memory exceptions for active
+elements.
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype] does not encode LMUL in {1, 2, 4, 8}.
+* No effective lambda is selected.
+* The effective lambda is not supported for the current
+  (`VLEN`, `SEW`) configuration. A nonzero instruction lambda
+  field is checked exactly and is not WARL-clamped.
+* `VL` is not a multiple of `effective_lambda * LMUL`.
+* `vs3` is not aligned for LMUL, or its register group extends past `v31`.
+
+A nonzero xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] value is legal and is not an illegal-instruction
+condition.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|lambda |$encoding[31:29]
+|vm |$encoding[25]
+|xs2 |$encoding[24:20]
+|xs1 |$encoding[19:15]
+|vs3 |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvmtls*
+| any
+|===
+
+
+
+
+[#udb:doc:inst:vmttl_v]
+== vmttl.v
+
+Synopsis::
+Transposing Matrix Tile Load
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vmttl.v vd, (xs1), xs2, lambda, vm
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x7,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x7,"type":2},{"bits":5,"name": "xs1","type":4},{"bits":5,"name": "xs2","type":4},{"bits":1,"name": "vm","type":4},{"bits":3,"name": 0x5,"type":2},{"bits":3,"name": "lambda","type":4}]}
+....
+
+Description::
+Loads a two-dimensional array of `SEW`-bit storage elements from memory
+and transposes those storage elements into the vector register-group
+layout.
+
+When each logical matrix element occupies one `SEW`-bit storage element,
+this operation is also a logical matrix transpose. In that case it can be
+used when a B matrix is stored in row-major order, or when
+an A or C matrix is stored in column-major order.
+
+When multiple logical elements are packed within each `SEW`-bit storage
+element, the instruction transposes the storage elements but does not
+transpose the packed logical elements within them.
+
+`xs1` holds the matrix base address; `xs2` holds the leading dimension `LD` in elements of width SEW.
+If `xs2` holds zero (0), the leading dimension `LD` is set to VLEN / (SEW × LAMBDA),
+which is the natural maximum width of a B tile and height of an A or C tile.
+The parameter LAMBDA refers to the result matrix tile of the transposing load operation.
+When the lambda field is specified, it overrides `lambda[2:0]` from xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype] for this instruction.
+Inactive elements (masked off) are left undisturbed in the destination register.
+Tail elements (index ≥ VL) are left undisturbed in the destination register.
+The tail-agnostic (xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype]) and mask-agnostic (xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype]) fill policies do not apply to tile loads.
+Neither inactive nor tail elements raise memory exceptions.
+
+Let _linesize_ = LAMBDA × LMUL.
+For each element index `i` in the body `[vstart, VL)` where the mask is enabled:
+
+    VD[i] = M[xs1 + (SEW ÷ 8) × ((i % linesize) × LD + (i / linesize))]
+
+The instruction raises the standard vector memory exceptions for active
+elements.
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype] does not encode LMUL in {1, 2, 4, 8}.
+* No effective lambda is selected.
+* The effective lambda is not supported for the current
+  (`VLEN`, `SEW`) configuration. A nonzero instruction lambda
+  field is checked exactly and is not WARL-clamped.
+* `VL` is not a multiple of `effective_lambda * LMUL`.
+* `vd` is not aligned for LMUL, or its register group extends past `v31`.
+* `vm=0` and the destination register group overlaps `v0`.
+
+A nonzero xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] value is legal and is not an illegal-instruction
+condition.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|lambda |$encoding[31:29]
+|vm |$encoding[25]
+|xs2 |$encoding[24:20]
+|xs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvmttls*
+| any
+|===
+
+
+
+
+[#udb:doc:inst:vmtts_v]
+== vmtts.v
+
+Synopsis::
+Transposing Matrix Tile Store
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vmtts.v vs3, (xs1), xs2, lambda, vm
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x27,"type":2},{"bits":5,"name": "vs3","type":4},{"bits":3,"name": 0x7,"type":2},{"bits":5,"name": "xs1","type":4},{"bits":5,"name": "xs2","type":4},{"bits":1,"name": "vm","type":4},{"bits":3,"name": 0x5,"type":2},{"bits":3,"name": "lambda","type":4}]}
+....
+
+Description::
+Stores a two-dimensional array of `SEW`-bit storage elements from a
+vector register group to memory, applying the inverse storage-element
+transposition of xref:insts:vmttl_v.adoc#udb:doc:inst:vmttl_v[vmttl.v].
+
+The instruction does not unpack, transpose, or repack logical elements
+contained within an `SEW`-bit storage element.
+
+`xs1` holds the matrix base address; `xs2` holds the leading dimension `LD` in elements of width SEW.
+If `xs2` holds zero (0), the leading dimension `LD` is set to VLEN / (SEW × LAMBDA).
+The parameter LAMBDA refers to the source matrix tile of the transposing store operation.
+When the lambda field is specified, it overrides `lambda[2:0]` from xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype] for this instruction.
+Inactive elements (masked off) are not written to memory and do not raise exceptions.
+Tail elements (index ≥ VL) are not written to memory and do not raise exceptions.
+
+Let _linesize_ = LAMBDA × LMUL.
+For each element index `i` in the body `[vstart, VL)` where the mask is enabled:
+
+    M[xs1 + (SEW ÷ 8) × ((i % linesize) × LD + (i / linesize))] = VS[i]
+
+The instruction raises the standard vector memory exceptions for active
+elements.
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype] does not encode LMUL in {1, 2, 4, 8}.
+* No effective lambda is selected.
+* The effective lambda is not supported for the current
+  (`VLEN`, `SEW`) configuration. A nonzero instruction lambda
+  field is checked exactly and is not WARL-clamped.
+* `VL` is not a multiple of `effective_lambda * LMUL`.
+* `vs3` is not aligned for LMUL, or its register group extends past `v31`.
+
+A nonzero xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] value is legal and is not an illegal-instruction
+condition.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|lambda |$encoding[31:29]
+|vm |$encoding[25]
+|xs2 |$encoding[24:20]
+|xs1 |$encoding[19:15]
+|vs3 |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvmttls*
 | any
 |===
 
@@ -63197,6 +64366,90 @@ Included in::
 | Extension | Version
 
 | *Zvzip*
+| any
+|===
+
+
+
+
+[#udb:doc:inst:vqmmacc_vv]
+== vqmmacc.vv
+
+Synopsis::
+Integer Quad-Widening Matrix Multiply-Accumulate
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vqmmacc.vv vd, vs1, vs2
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x57,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x0,"type":2},{"bits":5,"name": "vs1","type":4},{"bits":5,"name": "vs2","type":4},{"bits":7,"name": 0x75,"type":2}]}
+....
+
+Description::
+Interpreting `vs1` as A~tile~ and `vs2` as
+B~tile~^T^, the instruction computes
+
+T = A~tile~ × B~tile~^T^
+
+and accumulates T into `vd`: C ← C + T,
+with a widening factor of 4 applied to the K dimension.
+
+`vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+and `vd` as an M×M physical accumulator tile (row-major register
+layout), of which only the first N columns are active.
+`vs1` and `vs2` have elements of width SEW÷4; `vd` has elements of width SEW.
+
+K_effective = LAMBDA × 4 × LMUL.
+`VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+The remaining columns of the physical C tile are C tile tail elements.
+The signedness of each input operand is selected by `altfmt_A` and `altfmt_B` in xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype]:
+0 = signed, 1 = unsigned.
+Accumulation is modular (wraps at 2^SEW^).
+Only `SEW ∈ {16, 32, 64}` is valid, giving
+`EEW = SEW ÷ 4 ∈ {4, 8, 16}`.
+`SEW = 8`, which would imply `EEW = 2`, is _reserved_.
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* `SEW = 8` (`EEW = SEW ÷ 4 = 2` is reserved).
+* VL is not a multiple of LAMBDA × LMUL.
+* EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+* `vs1` or `vs2` is not aligned for LMUL.
+* `vd` is not aligned for EMUL_C.
+* The `vd` register group overlaps the `vs1` or `vs2` register group.
+* When `vm=1`: the selected row in the integer encoding map is marked `_reserved_`, or the extension named by that row is not implemented.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|vs2 |$encoding[24:20]
+|vs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvmm*
 | any
 |===
 
@@ -75294,6 +76547,86 @@ Included in::
 | Extension | Version
 
 | *Zvl32b*
+| any
+|===
+
+
+
+
+[#udb:doc:inst:vwmmacc_vv]
+== vwmmacc.vv
+
+Synopsis::
+Integer Widening Matrix Multiply-Accumulate
+
+Base::
+
+[cols="1,1"]
+|===
+| RV32 | RV64
+
+| &#x2713;
+| &#x2713;
+|===
+
+Assembly::
+vwmmacc.vv vd, vs1, vs2
+
+Encoding::
+[wavedrom, ,svg,subs='attributes',width="100%"]
+....
+{"reg":[{"bits":7,"name": 0x57,"type":2},{"bits":5,"name": "vd","type":4},{"bits":3,"name": 0x0,"type":2},{"bits":5,"name": "vs1","type":4},{"bits":5,"name": "vs2","type":4},{"bits":7,"name": 0x73,"type":2}]}
+....
+
+Description::
+Interpreting `vs1` as A~tile~ and `vs2` as
+B~tile~^T^, the instruction computes
+
+T = A~tile~ × B~tile~^T^
+
+and accumulates T into `vd`: C ← C + T,
+with a widening factor of 2 applied to the K dimension.
+
+`vs1` is interpreted as the M × K~eff~ tile A~tile~ in row-major register layout, and `vs2` is interpreted as the K~eff~ × N tile B~tile~^T^ in column-major register layout,
+and `vd` as an M×M physical accumulator tile (row-major register
+layout), of which only the first N columns are active.
+`vs1` and `vs2` have elements of width SEW÷2; `vd` has elements of width SEW.
+
+K_effective = LAMBDA × 2 × LMUL.
+`VL` selects how many columns of B~tile~^T^, and therefore how many columns of C, are active; VL must be a multiple of LAMBDA × LMUL.
+The remaining columns of the physical C tile are C tile tail elements.
+The signedness of each input operand is selected by `altfmt_A` and `altfmt_B` in xref:csrs:vtype.adoc#udb:doc:csr:vtype[vtype]:
+0 = signed, 1 = unsigned.
+Accumulation is modular (wraps at 2^SEW^).
+
+_Illegal Instruction_ is raised if any of the following conditions hold:
+
+* xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* VL is not a multiple of LAMBDA × LMUL.
+* EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
+* `vs1` or `vs2` is not aligned for LMUL.
+* `vd` is not aligned for EMUL_C.
+* The `vd` register group overlaps the `vs1` or `vs2` register group.
+* When `vm=1`: the selected row in the integer encoding map is marked `_reserved_`, or the extension named by that row is not implemented.
+
+
+Decode Variables::
+[width="100%", cols="1,2", options="header"]
+|===
+|Variable Name |Location
+|vs2 |$encoding[24:20]
+|vs1 |$encoding[19:15]
+|vd |$encoding[11:7]
+|===
+
+Included in::
+
+
+[width="100%",cols="1,2",options="header"]
+|===
+| Extension | Version
+
+| *Zvvmm*
 | any
 |===
 
