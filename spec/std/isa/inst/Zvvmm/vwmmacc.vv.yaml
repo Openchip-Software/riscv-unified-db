@@ -56,3 +56,13 @@ access:
   vs: always
   vu: always
 data_independent_timing: false
+operation(): |
+  if (CSR[vstart].VALUE != 0) {
+    raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
+  }
+  ZvvmGemmGeom g = zvvm_decode_gemm_geometry(2, $encoding);
+  if (!zvvm_int_encoding_legal?(g.w, g.eew_c)) {
+    raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
+  }
+  zvvm_check_gemm_reg_groups(g, vs1, vs2, vd, $encoding);
+  zvvm_int_gemm(g, CSR[vtype].ALTFMTA == 0, CSR[vtype].ALTFMTB == 0, vs1, vs2, vd);

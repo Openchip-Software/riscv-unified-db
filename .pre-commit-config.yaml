@@ -14,7 +14,7 @@ repos:
       - id: end-of-file-fixer
         priority: 10
         # Exclude reference and generated files
-        exclude: (cfgs/profile.*|.*\.golden\.adoc$|.*\.svg|amo.*\.yaml|hpmcounter.*\.yaml|mhpmevent.*\.yaml|pmp.*\.yaml|mop.*\.yaml|mcountinhibit\.yaml|[smh]counteren\.yaml|scountovf\.yaml|spec/std/isa/inst/Zalrsc/.*\.yaml|spec/std/isa/inst/Zalasr/.*\.yaml|spec/std/isa/ext/Zvv(x|xn)?(i|ofp|fp|bf)[0-9].*\.yaml|SUPPORTED_LAMBDA_SEW[0-9]+\.yaml|ZVVM_FP_(GROUPING|PSM|RND)_.*\.yaml|\.github/workflows/regress\.yml|tests/data/golden/.*)
+        exclude: (cfgs/profile.*|.*\.golden\.adoc$|.*\.svg|amo.*\.yaml|hpmcounter.*\.yaml|mhpmevent.*\.yaml|pmp.*\.yaml|mop.*\.yaml|mcountinhibit\.yaml|[smh]counteren\.yaml|scountovf\.yaml|spec/std/isa/inst/Zalrsc/.*\.yaml|spec/std/isa/inst/Zalasr/.*\.yaml|spec/std/isa/ext/Zvv(x|xn)?(i|ofp|fp|bf)[0-9].*\.yaml|SUPPORTED_LAMBDA_SEW[0-9]+\.yaml|ZVVM_FP_(GROUPING|PSM|RND)_.*\.yaml|spec/std/isa/isa/ime_tables\.idl|\.github/workflows/regress\.yml|tests/data/golden/.*)
       - id: trailing-whitespace
         priority: 11
         args: [--markdown-linebreak-ext=md]

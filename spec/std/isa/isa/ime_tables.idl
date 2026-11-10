@@ -1,0 +1,684 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+
+# WARNING: This file is auto-generated from spec/std/isa/isa/ime_tables.layout
+
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+%version: 1.0
+
+# Zvvm encoding-map legality and floating-point disclosure lookups.
+# Source: https://github.com/riscv/integrated-matrix-extension (tag v0.9.0-on-main)
+
+function zvvm_int_encoding_legal? {
+  returns Boolean
+  arguments
+    U32 w,
+    U32 sew
+  description {
+    Return true if the integer encoding map makes an ordinary (vm=1) integer
+    multiply-accumulate with widening factor +w+ and SEW = +sew+ legal
+    (specification `check_int_encoding_legality`). The row depends only on W
+    and SEW, because altfmt_A and altfmt_B select signedness in every row.
+  }
+  body {
+    if ((w == 1) && (sew == 8)) {
+      return implemented?(ExtensionName::Zvvi8mm);
+    }
+    if ((w == 1) && (sew == 16)) {
+      return implemented?(ExtensionName::Zvvi16mm);
+    }
+    if ((w == 1) && (sew == 32)) {
+      return implemented?(ExtensionName::Zvvi32mm);
+    }
+    if ((w == 1) && (sew == 64)) {
+      return implemented?(ExtensionName::Zvvi64mm);
+    }
+    if ((w == 2) && (sew == 8)) {
+      return implemented?(ExtensionName::Zvvi4i8mm);
+    }
+    if ((w == 2) && (sew == 16)) {
+      return implemented?(ExtensionName::Zvvi8i16mm);
+    }
+    if ((w == 2) && (sew == 32)) {
+      return implemented?(ExtensionName::Zvvi16i32mm);
+    }
+    if ((w == 2) && (sew == 64)) {
+      return implemented?(ExtensionName::Zvvi32i64mm);
+    }
+    if ((w == 4) && (sew == 16)) {
+      return implemented?(ExtensionName::Zvvi4i16mm);
+    }
+    if ((w == 4) && (sew == 32)) {
+      return implemented?(ExtensionName::Zvvi8i32mm);
+    }
+    if ((w == 4) && (sew == 64)) {
+      return implemented?(ExtensionName::Zvvi16i64mm);
+    }
+    if ((w == 8) && (sew == 32)) {
+      return implemented?(ExtensionName::Zvvi4i32mm);
+    }
+    if ((w == 8) && (sew == 64)) {
+      return implemented?(ExtensionName::Zvvi8i64mm);
+    }
+    return false;
+  }
+}
+
+function zvvm_fp_encoding_legal? {
+  returns Boolean
+  arguments
+    U32 w,
+    U32 sew,
+    Bits<1> alt_a,
+    Bits<1> alt_b,
+    Bits<1> alt
+  description {
+    Return true if the floating-point encoding map makes an ordinary (vm=1)
+    floating-point multiply-accumulate legal (specification
+    `check_fp_encoding_legality`). +alt_a+, +alt_b+ and +alt+ are vtype.ALTFMTA,
+    vtype.ALTFMTB and vtype.ALTFMT.
+  }
+  body {
+    if ((w == 1) && (sew == 8) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8mm);
+    }
+    if ((w == 1) && (sew == 8) && (alt_a == 0) && (alt_b == 0) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvofp8mm);
+    }
+    if ((w == 1) && (sew == 8) && (alt_a == 0) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8mm);
+    }
+    if ((w == 1) && (sew == 8) && (alt_a == 0) && (alt_b == 1) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvofp8mm);
+    }
+    if ((w == 1) && (sew == 8) && (alt_a == 1) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8mm);
+    }
+    if ((w == 1) && (sew == 8) && (alt_a == 1) && (alt_b == 0) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvofp8mm);
+    }
+    if ((w == 1) && (sew == 8) && (alt_a == 1) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8mm);
+    }
+    if ((w == 1) && (sew == 8) && (alt_a == 1) && (alt_b == 1) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvofp8mm);
+    }
+    if ((w == 1) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp16mm);
+    }
+    if ((w == 1) && (sew == 16) && (alt_a == 0) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvbf16mm) && implemented?(ExtensionName::Zvvfp16mm);
+    }
+    if ((w == 1) && (sew == 16) && (alt_a == 0) && (alt_b == 1) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvbf16mm) && implemented?(ExtensionName::Zvvfp16mm);
+    }
+    if ((w == 1) && (sew == 16) && (alt_a == 1) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvbf16mm) && implemented?(ExtensionName::Zvvfp16mm);
+    }
+    if ((w == 1) && (sew == 16) && (alt_a == 1) && (alt_b == 0) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvbf16mm) && implemented?(ExtensionName::Zvvfp16mm);
+    }
+    if ((w == 1) && (sew == 16) && (alt_a == 1) && (alt_b == 1) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvbf16mm);
+    }
+    if ((w == 1) && (sew == 32) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp32mm);
+    }
+    if ((w == 1) && (sew == 32) && (alt_a == 0) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp32mm);
+    }
+    if ((w == 1) && (sew == 32) && (alt_a == 1) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp32mm);
+    }
+    if ((w == 1) && (sew == 32) && (alt_a == 1) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp32mm);
+    }
+    if ((w == 1) && (sew == 64) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp64mm);
+    }
+    if ((w == 1) && (sew == 64) && (alt_a == 0) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp64mm);
+    }
+    if ((w == 1) && (sew == 64) && (alt_a == 1) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp64mm);
+    }
+    if ((w == 1) && (sew == 64) && (alt_a == 1) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp64mm);
+    }
+    if ((w == 2) && (sew == 8) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp4ofp8mm);
+    }
+    if ((w == 2) && (sew == 8) && (alt_a == 0) && (alt_b == 0) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvofp4ofp8mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvofp8bf16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 1) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvofp8bf16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 1) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 1) && (alt_b == 0) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvofp8bf16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 1) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 1) && (alt_b == 1) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvofp8bf16mm);
+    }
+    if ((w == 2) && (sew == 32) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp16fp32mm);
+    }
+    if ((w == 2) && (sew == 32) && (alt_a == 0) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvbf16fp32mm) && implemented?(ExtensionName::Zvvfp16fp32mm);
+    }
+    if ((w == 2) && (sew == 32) && (alt_a == 1) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvbf16fp32mm) && implemented?(ExtensionName::Zvvfp16fp32mm);
+    }
+    if ((w == 2) && (sew == 32) && (alt_a == 1) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvbf16fp32mm);
+    }
+    if ((w == 2) && (sew == 64) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp32fp64mm);
+    }
+    if ((w == 2) && (sew == 64) && (alt_a == 0) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp32fp64mm);
+    }
+    if ((w == 2) && (sew == 64) && (alt_a == 1) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp32fp64mm);
+    }
+    if ((w == 2) && (sew == 64) && (alt_a == 1) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp32fp64mm);
+    }
+    if ((w == 4) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp4fp16mm);
+    }
+    if ((w == 4) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 1)) {
+      return implemented?(ExtensionName::Zvvofp4bf16mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8fp32mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 0) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8fp32mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 1) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8fp32mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 1) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8fp32mm);
+    }
+    if ((w == 4) && (sew == 64) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvfp16fp64mm);
+    }
+    if ((w == 4) && (sew == 64) && (alt_a == 0) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvbf16fp64mm) && implemented?(ExtensionName::Zvvfp16fp64mm);
+    }
+    if ((w == 4) && (sew == 64) && (alt_a == 1) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvbf16fp64mm) && implemented?(ExtensionName::Zvvfp16fp64mm);
+    }
+    if ((w == 4) && (sew == 64) && (alt_a == 1) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvbf16fp64mm);
+    }
+    if ((w == 8) && (sew == 32) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp4fp32mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 0) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8fp64mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 0) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8fp64mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 1) && (alt_b == 0) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8fp64mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 1) && (alt_b == 1) && (alt == 0)) {
+      return implemented?(ExtensionName::Zvvofp8fp64mm);
+    }
+    return false;
+  }
+}
+
+function zvvm_fp_mx_encoding_legal? {
+  returns Boolean
+  arguments
+    U32 w,
+    U32 sew,
+    Bits<1> alt_a,
+    Bits<1> alt_b,
+    Bits<1> alt,
+    Bits<1> bs
+  description {
+    Return true if the block-size cells of the floating-point encoding map make
+    a microscaled (vm=0) floating-point multiply-accumulate legal
+    (specification `check_fp_mx_encoding_legality`). +bs+ is vtype.BS.
+  }
+  body {
+    if ((w == 2) && (sew == 8) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp4ofp8mm);
+    }
+    if ((w == 2) && (sew == 8) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp4ofp8mm);
+    }
+    if ((w == 2) && (sew == 8) && (alt_a == 0) && (alt_b == 0) && (alt == 1) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp4ofp8mm);
+    }
+    if ((w == 2) && (sew == 8) && (alt_a == 0) && (alt_b == 0) && (alt == 1) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp4ofp8mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 1) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8bf16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 1) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8bf16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 1) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 1) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 1) && (alt == 1) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8bf16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 1) && (alt == 1) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8bf16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 1) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 1) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 1) && (alt_b == 0) && (alt == 1) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8bf16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 1) && (alt_b == 0) && (alt == 1) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8bf16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 1) && (alt_b == 1) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 1) && (alt_b == 1) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 1) && (alt_b == 1) && (alt == 1) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8bf16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 1) && (alt_b == 1) && (alt == 1) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8bf16mm);
+    }
+    if ((w == 4) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp4fp16mm);
+    }
+    if ((w == 4) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp4fp16mm);
+    }
+    if ((w == 4) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 1) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp4bf16mm);
+    }
+    if ((w == 4) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 1) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp4bf16mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8fp32mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8fp32mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 0) && (alt_b == 1) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8fp32mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 0) && (alt_b == 1) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8fp32mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 1) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8fp32mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 1) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8fp32mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 1) && (alt_b == 1) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8fp32mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 1) && (alt_b == 1) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8fp32mm);
+    }
+    if ((w == 8) && (sew == 32) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp4fp32mm);
+    }
+    if ((w == 8) && (sew == 32) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp4fp32mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8fp64mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8fp64mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 0) && (alt_b == 1) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8fp64mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 0) && (alt_b == 1) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8fp64mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 1) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8fp64mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 1) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8fp64mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 1) && (alt_b == 1) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxofp8fp64mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 1) && (alt_b == 1) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxnofp8fp64mm);
+    }
+    return false;
+  }
+}
+
+function zvvm_int_mx_encoding_legal? {
+  returns Boolean
+  arguments
+    U32 w,
+    U32 sew,
+    Bits<1> alt_a,
+    Bits<1> alt_b,
+    Bits<1> alt,
+    Bits<1> bs
+  description {
+    Return true if the integer MX encoding map makes an integer-input
+    microscaled multiply-accumulate legal (specification
+    `check_int_mx_encoding_legality`). MXINT inputs are signed, so a row with
+    +alt_a+ or +alt_b+ set is reserved.
+  }
+  body {
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxi8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxni8fp16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 1) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxi8bf16mm);
+    }
+    if ((w == 2) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 1) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxni8bf16mm);
+    }
+    if ((w == 4) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxi4fp16mm);
+    }
+    if ((w == 4) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxni4fp16mm);
+    }
+    if ((w == 4) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 1) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxi4bf16mm);
+    }
+    if ((w == 4) && (sew == 16) && (alt_a == 0) && (alt_b == 0) && (alt == 1) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxni4bf16mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxi8fp32mm);
+    }
+    if ((w == 4) && (sew == 32) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxni8fp32mm);
+    }
+    if ((w == 8) && (sew == 32) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxi4fp32mm);
+    }
+    if ((w == 8) && (sew == 32) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxni4fp32mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 0)) {
+      return implemented?(ExtensionName::Zvvxi8fp64mm);
+    }
+    if ((w == 8) && (sew == 64) && (alt_a == 0) && (alt_b == 0) && (alt == 0) && (bs == 1)) {
+      return implemented?(ExtensionName::Zvvxni8fp64mm);
+    }
+    return false;
+  }
+}
+
+function zvvm_fp_grouping {
+  returns U32
+  arguments
+    U32 sew,
+    U32 w,
+    Bits<3> lambda_enc
+  description {
+    Return the disclosed grouping factor G for (+sew+, +w+, lambda), where
+    +lambda_enc+ is the nonzero vtype.LAMBDA encoding (specification
+    `get_fp_grouping`).
+  }
+  body {
+    if ((sew == 8) && (w == 1) && (implemented?(ExtensionName::Zvvofp8mm))) {
+      return ZVVM_FP_GROUPING_SEW8_W1[lambda_enc - 1];
+    }
+    if ((sew == 8) && (w == 2) && (implemented?(ExtensionName::Zvvofp4ofp8mm))) {
+      return ZVVM_FP_GROUPING_SEW8_W2[lambda_enc - 1];
+    }
+    if ((sew == 16) && (w == 1) && (implemented?(ExtensionName::Zvvfp16mm) || implemented?(ExtensionName::Zvvbf16mm))) {
+      return ZVVM_FP_GROUPING_SEW16_W1[lambda_enc - 1];
+    }
+    if ((sew == 16) && (w == 2) && (implemented?(ExtensionName::Zvvofp8fp16mm) || implemented?(ExtensionName::Zvvofp8bf16mm))) {
+      return ZVVM_FP_GROUPING_SEW16_W2[lambda_enc - 1];
+    }
+    if ((sew == 16) && (w == 4) && (implemented?(ExtensionName::Zvvofp4fp16mm) || implemented?(ExtensionName::Zvvofp4bf16mm))) {
+      return ZVVM_FP_GROUPING_SEW16_W4[lambda_enc - 1];
+    }
+    if ((sew == 32) && (w == 1) && (implemented?(ExtensionName::Zvvfp32mm))) {
+      return ZVVM_FP_GROUPING_SEW32_W1[lambda_enc - 1];
+    }
+    if ((sew == 32) && (w == 2) && (implemented?(ExtensionName::Zvvfp16fp32mm) || implemented?(ExtensionName::Zvvbf16fp32mm))) {
+      return ZVVM_FP_GROUPING_SEW32_W2[lambda_enc - 1];
+    }
+    if ((sew == 32) && (w == 4) && (implemented?(ExtensionName::Zvvofp8fp32mm))) {
+      return ZVVM_FP_GROUPING_SEW32_W4[lambda_enc - 1];
+    }
+    if ((sew == 32) && (w == 8) && (implemented?(ExtensionName::Zvvofp4fp32mm))) {
+      return ZVVM_FP_GROUPING_SEW32_W8[lambda_enc - 1];
+    }
+    if ((sew == 64) && (w == 1) && (implemented?(ExtensionName::Zvvfp64mm))) {
+      return ZVVM_FP_GROUPING_SEW64_W1[lambda_enc - 1];
+    }
+    if ((sew == 64) && (w == 2) && (implemented?(ExtensionName::Zvvfp32fp64mm))) {
+      return ZVVM_FP_GROUPING_SEW64_W2[lambda_enc - 1];
+    }
+    if ((sew == 64) && (w == 4) && (implemented?(ExtensionName::Zvvfp16fp64mm) || implemented?(ExtensionName::Zvvbf16fp64mm))) {
+      return ZVVM_FP_GROUPING_SEW64_W4[lambda_enc - 1];
+    }
+    if ((sew == 64) && (w == 8) && (implemented?(ExtensionName::Zvvofp8fp64mm))) {
+      return ZVVM_FP_GROUPING_SEW64_W8[lambda_enc - 1];
+    }
+    return 0;
+  }
+}
+
+function zvvm_fp_psm? {
+  returns Boolean
+  arguments
+    U32 sew,
+    U32 w,
+    Bits<3> lambda_enc
+  description {
+    Return the disclosed partial-sum mode for (+sew+, +w+, lambda): false for
+    psm=0 and true for psm=1 (specification `get_fp_psm`).
+  }
+  body {
+    if ((sew == 8) && (w == 1) && (implemented?(ExtensionName::Zvvofp8mm))) {
+      return ZVVM_FP_PSM_SEW8_W1[lambda_enc - 1];
+    }
+    if ((sew == 8) && (w == 2) && (implemented?(ExtensionName::Zvvofp4ofp8mm))) {
+      return ZVVM_FP_PSM_SEW8_W2[lambda_enc - 1];
+    }
+    if ((sew == 16) && (w == 1) && (implemented?(ExtensionName::Zvvfp16mm) || implemented?(ExtensionName::Zvvbf16mm))) {
+      return ZVVM_FP_PSM_SEW16_W1[lambda_enc - 1];
+    }
+    if ((sew == 16) && (w == 2) && (implemented?(ExtensionName::Zvvofp8fp16mm) || implemented?(ExtensionName::Zvvofp8bf16mm))) {
+      return ZVVM_FP_PSM_SEW16_W2[lambda_enc - 1];
+    }
+    if ((sew == 16) && (w == 4) && (implemented?(ExtensionName::Zvvofp4fp16mm) || implemented?(ExtensionName::Zvvofp4bf16mm))) {
+      return ZVVM_FP_PSM_SEW16_W4[lambda_enc - 1];
+    }
+    if ((sew == 32) && (w == 1) && (implemented?(ExtensionName::Zvvfp32mm))) {
+      return ZVVM_FP_PSM_SEW32_W1[lambda_enc - 1];
+    }
+    if ((sew == 32) && (w == 2) && (implemented?(ExtensionName::Zvvfp16fp32mm) || implemented?(ExtensionName::Zvvbf16fp32mm))) {
+      return ZVVM_FP_PSM_SEW32_W2[lambda_enc - 1];
+    }
+    if ((sew == 32) && (w == 4) && (implemented?(ExtensionName::Zvvofp8fp32mm))) {
+      return ZVVM_FP_PSM_SEW32_W4[lambda_enc - 1];
+    }
+    if ((sew == 32) && (w == 8) && (implemented?(ExtensionName::Zvvofp4fp32mm))) {
+      return ZVVM_FP_PSM_SEW32_W8[lambda_enc - 1];
+    }
+    if ((sew == 64) && (w == 1) && (implemented?(ExtensionName::Zvvfp64mm))) {
+      return ZVVM_FP_PSM_SEW64_W1[lambda_enc - 1];
+    }
+    if ((sew == 64) && (w == 2) && (implemented?(ExtensionName::Zvvfp32fp64mm))) {
+      return ZVVM_FP_PSM_SEW64_W2[lambda_enc - 1];
+    }
+    if ((sew == 64) && (w == 4) && (implemented?(ExtensionName::Zvvfp16fp64mm) || implemented?(ExtensionName::Zvvbf16fp64mm))) {
+      return ZVVM_FP_PSM_SEW64_W4[lambda_enc - 1];
+    }
+    if ((sew == 64) && (w == 8) && (implemented?(ExtensionName::Zvvofp8fp64mm))) {
+      return ZVVM_FP_PSM_SEW64_W8[lambda_enc - 1];
+    }
+    return false;
+  }
+}
+
+function zvvm_fp_rnd {
+  returns Bits<2>
+  arguments
+    U32 sew,
+    U32 w,
+    Bits<3> lambda_enc
+  description {
+    Return the disclosed group rounding for (+sew+, +w+, lambda): 0 for frm,
+    1 for rto and 2 for xct (specification `get_fp_rnd`).
+  }
+  body {
+    if ((sew == 8) && (w == 1) && (implemented?(ExtensionName::Zvvofp8mm))) {
+      if (ZVVM_FP_RND_SEW8_W1[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW8_W1[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    if ((sew == 8) && (w == 2) && (implemented?(ExtensionName::Zvvofp4ofp8mm))) {
+      if (ZVVM_FP_RND_SEW8_W2[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW8_W2[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    if ((sew == 16) && (w == 1) && (implemented?(ExtensionName::Zvvfp16mm) || implemented?(ExtensionName::Zvvbf16mm))) {
+      if (ZVVM_FP_RND_SEW16_W1[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW16_W1[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    if ((sew == 16) && (w == 2) && (implemented?(ExtensionName::Zvvofp8fp16mm) || implemented?(ExtensionName::Zvvofp8bf16mm))) {
+      if (ZVVM_FP_RND_SEW16_W2[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW16_W2[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    if ((sew == 16) && (w == 4) && (implemented?(ExtensionName::Zvvofp4fp16mm) || implemented?(ExtensionName::Zvvofp4bf16mm))) {
+      if (ZVVM_FP_RND_SEW16_W4[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW16_W4[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    if ((sew == 32) && (w == 1) && (implemented?(ExtensionName::Zvvfp32mm))) {
+      if (ZVVM_FP_RND_SEW32_W1[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW32_W1[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    if ((sew == 32) && (w == 2) && (implemented?(ExtensionName::Zvvfp16fp32mm) || implemented?(ExtensionName::Zvvbf16fp32mm))) {
+      if (ZVVM_FP_RND_SEW32_W2[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW32_W2[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    if ((sew == 32) && (w == 4) && (implemented?(ExtensionName::Zvvofp8fp32mm))) {
+      if (ZVVM_FP_RND_SEW32_W4[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW32_W4[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    if ((sew == 32) && (w == 8) && (implemented?(ExtensionName::Zvvofp4fp32mm))) {
+      if (ZVVM_FP_RND_SEW32_W8[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW32_W8[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    if ((sew == 64) && (w == 1) && (implemented?(ExtensionName::Zvvfp64mm))) {
+      if (ZVVM_FP_RND_SEW64_W1[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW64_W1[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    if ((sew == 64) && (w == 2) && (implemented?(ExtensionName::Zvvfp32fp64mm))) {
+      if (ZVVM_FP_RND_SEW64_W2[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW64_W2[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    if ((sew == 64) && (w == 4) && (implemented?(ExtensionName::Zvvfp16fp64mm) || implemented?(ExtensionName::Zvvbf16fp64mm))) {
+      if (ZVVM_FP_RND_SEW64_W4[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW64_W4[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    if ((sew == 64) && (w == 8) && (implemented?(ExtensionName::Zvvofp8fp64mm))) {
+      if (ZVVM_FP_RND_SEW64_W8[lambda_enc - 1] == "rto") {
+        return 1;
+      } else if (ZVVM_FP_RND_SEW64_W8[lambda_enc - 1] == "xct") {
+        return 2;
+      }
+      return 0;
+    }
+    return 0;
+  }
+}

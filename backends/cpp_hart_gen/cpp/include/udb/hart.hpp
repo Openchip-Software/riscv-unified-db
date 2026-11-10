@@ -336,6 +336,29 @@ namespace udb {
     void sync_read_after_write_device(bool completed, const PossiblyUnknownBits<32>& write_bitmask) { m_soc.sync_read_after_write_device(completed, write_bitmask.get()); }
     void sync_write_after_read_device(bool completed, const PossiblyUnknownBits<32>& write_bitmask) { m_soc.sync_write_after_read_device(completed, write_bitmask.get()); }
 
+    // Zvvm builtins. The floating-point and microscaled matrix
+    // multiply-accumulate arithmetic is implementation-specific (see
+    // spec/std/isa/isa/ime.idl); this ISS does not provide it yet.
+    void zvvm_fp_gemm(const PossiblyUnknownBits<32>& w, const PossiblyUnknownBits<32>& lambda,
+                      const PossiblyUnknownBits<32>& lmul, const PossiblyUnknownBits<5>& vs1,
+                      const PossiblyUnknownBits<5>& vs2, const PossiblyUnknownBits<5>& vd,
+                      const PossiblyUnknownBits<32>& grouping, bool psm,
+                      const PossiblyUnknownBits<2>& rnd) {
+      throw std::runtime_error("zvvm_fp_gemm is not implemented in this ISS");
+    }
+    void zvvm_fp_scaled_gemm(const PossiblyUnknownBits<32>& w, const PossiblyUnknownBits<32>& lambda,
+                             const PossiblyUnknownBits<32>& lmul, const PossiblyUnknownBits<5>& vs1,
+                             const PossiblyUnknownBits<5>& vs2, const PossiblyUnknownBits<5>& vd,
+                             const PossiblyUnknownBits<32>& grouping, bool psm,
+                             const PossiblyUnknownBits<2>& rnd) {
+      throw std::runtime_error("zvvm_fp_scaled_gemm is not implemented in this ISS");
+    }
+    void zvvm_int_scaled_gemm(const PossiblyUnknownBits<32>& w, const PossiblyUnknownBits<32>& lambda,
+                              const PossiblyUnknownBits<32>& lmul, const PossiblyUnknownBits<5>& vs1,
+                              const PossiblyUnknownBits<5>& vs2, const PossiblyUnknownBits<5>& vd) {
+      throw std::runtime_error("zvvm_int_scaled_gemm is not implemented in this ISS");
+    }
+
     // xlen of M-mode, i.e., MXLEN
     virtual unsigned mxlen() = 0;
 
