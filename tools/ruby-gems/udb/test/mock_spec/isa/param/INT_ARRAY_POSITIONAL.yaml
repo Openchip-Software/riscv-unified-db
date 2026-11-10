@@ -1,0 +1,20 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# yaml-language-server: $schema=../../../../schemas/param_schema.json
+
+$schema: param_schema.json#
+kind: parameter
+name: INT_ARRAY_POSITIONAL
+long_name: Fixed-length integer array
+definedBy:
+  extension:
+    name: A
+description: A fixed-length integer array whose element positions are compared in conditions.
+schema:
+  type: array
+  items:
+    type: integer
+    enum: [0, 1, 2, 4]
+  maxItems: 4
+  minItems: 4

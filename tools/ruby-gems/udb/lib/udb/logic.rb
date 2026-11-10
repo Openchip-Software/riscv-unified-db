@@ -431,25 +431,37 @@ module Udb
         msb, lsb = @yaml.fetch("range").split("-").map(&:to_i)
         e = T.cast(e, Z3ParameterTerm).extract(msb, lsb)
       end
+      # An element of a string array is a Z3 integer holding the hash of the
+      # string, so a string constant compared with it is hashed the same way.
+      z3_const = ->(v) { (v.is_a?(String) && e.is_a?(Z3::Expr)) ? v.hash : v }
+      # Z3 rejects <, <=, > and >= on bit vectors, so an element of an integer
+      # array is ordered with the unsigned comparison +unsigned_op+ instead.
+      ordered = lambda do |op, unsigned_op, v|
+        if e.is_a?(Z3::BitvecExpr)
+          e.public_send(unsigned_op, v)
+        else
+          T.cast(e, T.any(Z3ParameterTerm, Z3::IntExpr)).public_send(op, v)
+        end
+      end
       case t
       when ParameterComparisonType::Equal
-        e == @yaml["equal"]
+        e == z3_const.call(@yaml["equal"])
       when ParameterComparisonType::NotEqual
-        e != @yaml["notEqual"]
+        e != z3_const.call(@yaml["notEqual"])
       when ParameterComparisonType::LessThan
-        T.cast(e, T.any(Z3ParameterTerm, Z3::BitvecExpr, Z3::IntExpr)) < @yaml["lessThan"]
+        ordered.call(:<, :unsigned_lt, @yaml["lessThan"])
       when ParameterComparisonType::GreaterThan
-        T.cast(e, T.any(Z3ParameterTerm, Z3::BitvecExpr, Z3::IntExpr)) > @yaml["greaterThan"]
+        ordered.call(:>, :unsigned_gt, @yaml["greaterThan"])
       when ParameterComparisonType::LessThanOrEqual
-        T.cast(e, T.any(Z3ParameterTerm, Z3::BitvecExpr, Z3::IntExpr)) <= @yaml["lessThanOrEqual"]
+        ordered.call(:<=, :unsigned_le, @yaml["lessThanOrEqual"])
       when ParameterComparisonType::GreaterThanOrEqual
-        T.cast(e, T.any(Z3ParameterTerm, Z3::BitvecExpr, Z3::IntExpr)) >= @yaml["greaterThanOrEqual"]
+        ordered.call(:>=, :unsigned_ge, @yaml["greaterThanOrEqual"])
       when ParameterComparisonType::Includes
         T.cast(e, Z3ParameterTerm).has_value?(@yaml["includes"])
       when ParameterComparisonType::OneOf
-        expr = e == @yaml["oneOf"][0]
+        expr = e == z3_const.call(@yaml["oneOf"][0])
         @yaml["oneOf"][1..].each do |v|
-          expr = expr | (e == v)
+          expr = expr | (e == z3_const.call(v))
         end
         expr
       else
