@@ -102,8 +102,23 @@ class TestInstructionEncoding:
 
         return None
 
-    def _get_json_encoding(self, json_instr):
-        """Extract encoding string from JSON instruction data."""
+    def _find_all_matching_instructions(self, yaml_instr_name):
+        """Find every non-pseudo JSON instruction whose mnemonic is yaml_instr_name."""
+        yaml_instr_name = yaml_instr_name.lower().strip()
+        matches = []
+        for def_name in self.rv_instructions:
+            value = self.json_data.get(def_name)
+            if not isinstance(value, dict):
+                continue
+            if value.get("isPseudo", "") == 1 or value.get("isCodeGenOnly", "") == 1:
+                continue
+            asm_string = value.get("AsmString", "").lower().strip()
+            if asm_string and asm_string.split()[0] == yaml_instr_name:
+                matches.append(def_name)
+        return matches
+
+    def _get_json_bits(self, json_instr):
+        """Extract encoding tokens from JSON instruction data, most significant bit first."""
         encoding_bits = []
         try:
             inst = json_instr.get("Inst", [])
@@ -113,9 +128,41 @@ class TestInstructionEncoding:
                 else:
                     encoding_bits.append(str(bit))
             encoding_bits.reverse()
-            return "".join(encoding_bits)
+            return encoding_bits
         except (AttributeError, TypeError):
-            return ""
+            return []
+
+    def _get_json_encoding(self, json_instr):
+        """Extract encoding string from JSON instruction data."""
+        return "".join(self._get_json_bits(json_instr))
+
+    def _get_split_json_encoding(self, instr_name, yaml_match):
+        """Merge JSON instructions that split one YAML instruction on a YAML variable bit.
+
+        LLVM can define one instruction as several records that differ only in fixed
+        bits, for example vfwmmacc.vv as VFWMMACC_VV (vm=1) and VFWMMACC_VV_SCALE
+        (vm=0). When every differing bit is a variable bit in the YAML match, the
+        records together cover the YAML encoding, and the differing bits are compared
+        as one variable field. Returns None when the records do not split that way.
+        """
+        json_keys = self._find_all_matching_instructions(instr_name)
+        if len(json_keys) < 2:
+            return None
+        encodings = [self._get_json_bits(self.json_data[k]) for k in json_keys]
+        if len({len(e) for e in encodings}) != 1 or len(encodings[0]) != len(yaml_match):
+            return None
+
+        merged = []
+        for i, tokens in enumerate(zip(*encodings)):
+            if len(set(tokens)) == 1:
+                merged.append(tokens[0])
+            elif all(t in ("0", "1") for t in tokens) and yaml_match[i] == "-":
+                merged.append("split[?]")
+            else:
+                return None
+        if "split[?]" not in merged:
+            return None
+        return json_keys, "".join(merged)
 
     def test_instruction_encoding(self, instr_name):
         """Test encoding for a single instruction."""
@@ -157,6 +204,11 @@ class TestInstructionEncoding:
 
         # Get JSON encoding
         json_encoding = self._get_json_encoding(self.json_data[json_key])
+        if not allow_refinement:
+            split = self._get_split_json_encoding(instr_name, yaml_data["yaml_match"])
+            if split:
+                json_keys, json_encoding = split
+                json_key = ", ".join(json_keys)
 
         # Compare encodings
         differences = compare_yaml_json_encoding(
