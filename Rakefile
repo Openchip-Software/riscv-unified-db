@@ -684,7 +684,9 @@ IME_FP_GEOMETRIES.each do |(sew, w), exts|
 end
 
 # Zvvm encoding-map legality and disclosure lookup functions, generated from the
-# extension table so that the IDL names exactly the extensions that exist
+# extension table so that the IDL names exactly the extensions that exist.
+# Unlike the generated YAML files, this file stays writable: the resolver copies
+# .idl files into gen/ with their mode and then writes them again.
 file "#{$resolver.std_path}/isa/ime_tables.idl" => [
   "#{$resolver.std_path}/isa/ime_tables.layout",
   __FILE__
@@ -693,7 +695,6 @@ file "#{$resolver.std_path}/isa/ime_tables.idl" => [
   erb = ERB.new(File.read($resolver.std_path / "isa/ime_tables.layout"), trim_mode: "-")
   erb.filename = "#{$resolver.std_path}/isa/ime_tables.layout"
   File.write(t.name, insert_warning(erb.result(binding), t.prerequisites.first))
-  File.chmod(0444, t.name)
 end
 
 def gen_arch_file(f)
@@ -796,7 +797,8 @@ namespace :gen do
     end
 
     # Generate Zvvm encoding-map legality and disclosure lookup functions
-    gen_arch_file("#{$resolver.std_path}/isa/ime_tables.idl")
+    FileUtils.rm_f("#{$resolver.std_path}/isa/ime_tables.idl")
+    Rake::Task["#{$resolver.std_path}/isa/ime_tables.idl"].invoke
 
     # Generate Zvvm floating-point disclosure parameter files
     IME_FP_GEOMETRIES.each_key do |(sew, w)|
