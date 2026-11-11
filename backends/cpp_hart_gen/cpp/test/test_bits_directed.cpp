@@ -9,6 +9,7 @@
 #include <iostream>
 #include <udb/bits.hpp>
 #include <udb/defines.hpp>
+#include <udb/util.hpp>
 
 using Catch::Matchers::Equals;
 
@@ -652,3 +653,12 @@ TEMPLATE(129)
 TEMPLATE(InfinitePrecision)
 
 #undef TEMPLATE
+
+// Regression test: inserting a known field into a value whose bits are unknown
+// must make that field known, and leave the other bits unknown.
+TEST_CASE("bit_insert makes the inserted field known", "[bits]") {
+  PossiblyUnknownBits<128> reg;  // every bit unknown
+  bit_insert(reg, Bits<32>{63}, Bits<32>{32}, Bits<64>{0x12345678});
+  REQUIRE(reg.extract<63, 32>() == 0x12345678_b);
+  REQUIRE_THROWS(reg.extract<31, 0>() == 0_b);
+}
