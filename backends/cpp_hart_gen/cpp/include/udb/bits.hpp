@@ -3490,6 +3490,15 @@ namespace udb {
            std::equal(runtime_val.begin(), runtime_val.end(), compile_val.begin());
   }
 
+  // A string array parameter has a std::string run-time value and a
+  // std::string_view built-in value; std::array has no operator== across
+  // element types, so compare element by element.
+  template <typename T, typename U, std::size_t N>
+    requires(!std::same_as<T, U> && std::equality_comparable_with<T, U>)
+  bool udb_param_val_eq(const std::array<T, N>& runtime_val, const std::array<U, N>& compile_val) {
+    return std::equal(runtime_val.begin(), runtime_val.end(), compile_val.begin());
+  }
+
   template <typename A, typename B>
   bool udb_param_val_eq(const A& a, const B& b) {
     return a == b;

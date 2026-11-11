@@ -1024,7 +1024,10 @@ module Idl
   class ArrayLiteralAst < AstNode
     sig { override.params(symtab: SymbolTable, indent: Integer, indent_spaces: Integer).returns(String) }
     def gen_cpp(symtab, indent = 0, indent_spaces: 2)
-      "std::array<#{element_nodes.fetch(0).type(symtab).to_cxx_no_qualifiers}, #{element_nodes.size}>{#{element_nodes.map { |e| e.gen_cpp(symtab, 0) }.join(', ')}}"
+      # string literals are emitted as std::string_view ("..."sv), which does not
+      # convert implicitly to std::string
+      element_type = element_nodes.fetch(0).type(symtab).to_cxx_no_qualifiers.gsub("std::string", "std::string_view")
+      "std::array<#{element_type}, #{element_nodes.size}>{#{element_nodes.map { |e| e.gen_cpp(symtab, 0) }.join(', ')}}"
     end
   end
 
