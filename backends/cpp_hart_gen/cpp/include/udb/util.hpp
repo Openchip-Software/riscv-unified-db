@@ -54,7 +54,9 @@ namespace udb {
     // the mask from a 1-bit literal (BitsClass<T+1>{1_b}, width 1) would therefore collapse
     // the mask — and likewise `{value} << lsb` would collapse — to 0. The final assignment
     // re-masks `target` to its own width, so intermediate widths are harmless.
-    BitsClass<T, Signed> zero = target ^ target;
+    // `zero` is `target & 0`, not `target ^ target`: XOR keeps the unknown bits of a
+    // PossiblyUnknownBits target, which would make the inserted field unknown too.
+    BitsClass<T, Signed> zero = target & _Bits<1, false>{0_b};
     BitsClass<T, Signed> one = zero | _Bits<1, false>{1_b};
     BitsClass<T, Signed> field = zero | value;
     BitsClass<T, Signed> mask = ((one << (msb - lsb + _Bits<1, false>{1_b})) - one) << lsb;
