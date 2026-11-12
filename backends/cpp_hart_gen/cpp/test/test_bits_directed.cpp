@@ -662,3 +662,31 @@ TEST_CASE("bit_insert makes the inserted field known", "[bits]") {
   REQUIRE(reg.extract<63, 32>() == 0x12345678_b);
   REQUIRE_THROWS(reg.extract<31, 0>() == 0_b);
 }
+
+// The GMP-backed widths keep values modulo 2^N. The mask is built once per
+// width, and masking a negative intermediate gives its two's complement.
+TEST_CASE("GMP-backed widths wrap modulo 2^N", "[bits]") {
+  const mpz_class two_n = mpz_class{1} << 4224;
+  REQUIRE(Bits<4224>::mask() == two_n - 1);
+  REQUIRE(&Bits<4224>::mask() == &Bits<4224>::mask());
+
+  // 0 - 1 wraps to all ones; adding 1 wraps back to 0
+  Bits<4224> minus_one = Bits<4224>{0} - Bits<4224>{1};
+  REQUIRE(minus_one.get() == two_n - 1);
+  REQUIRE((minus_one + Bits<4224>{1}).get() == 0);
+
+  // two's complement of a value with bits above 2^128
+  Bits<4224> big{mpz_class{1} << 2100};
+  REQUIRE((-big).get() == two_n - (mpz_class{1} << 2100));
+  REQUIRE((Bits<4224>{0} - big + big).get() == 0);
+
+  // bits shifted past bit 4223 are dropped
+  REQUIRE((Bits<4224>{3} << Bits<32>{4223}).get() == (mpz_class{1} << 4223));
+  REQUIRE((minus_one >> Bits<32>{4220}).get() == 15);
+
+  // a width that is not a multiple of 64
+  REQUIRE((Bits<200>{0} - Bits<200>{1}).get() == (mpz_class{1} << 200) - 1);
+  REQUIRE((~Bits<200>{0}).get() == (mpz_class{1} << 200) - 1);
+  PossiblyUnknownBits<200> p{Bits<200>{5}};
+  REQUIRE((p - Bits<200>{6}).get() == (mpz_class{1} << 200) - 1);
+}
