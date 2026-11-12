@@ -479,11 +479,14 @@ namespace udb {
         return ((StorageType{1} << N) - 1);
       }
     }
+    // The GMP mask is built once per width. Building it on every call allocated a
+    // new N-bit integer for each masked operation.
     template <unsigned _N = N>
       requires(N > MaxNativePrecision)
-    static StorageType mask() {
+    static const StorageType &mask() {
       static_assert(N != InfinitePrecision);  // this isn't a good idea ;)
-      return ((StorageType{1} << N) - 1);
+      static const StorageType m = ((StorageType{1} << N) - 1);
+      return m;
     }
     static_assert(needs_mask<4>() == true);
     static_assert(needs_mask<8>() == false);
@@ -568,14 +571,26 @@ namespace udb {
 
     static constexpr std::conditional_t<needs_mask(), StorageType, const StorageType &> apply_mask(
         const StorageType &value) {
-      if constexpr (needs_mask()) {
+      if constexpr (needs_mask() && (N > MaxNativePrecision)) {
+        // value mod 2^N, rounded toward minus infinity, equals value & mask() for
+        // any sign of value, without building the mask
+        StorageType result;
+        mpz_fdiv_r_2exp(result.get_mpz_t(), value.get_mpz_t(), N);
+        return result;
+      } else if constexpr (needs_mask()) {
         return value & mask();
       } else {
         return value;
       }
     }
 
-    constexpr void apply_mask() { m_val = apply_mask(m_val); }
+    constexpr void apply_mask() {
+      if constexpr (needs_mask() && (N > MaxNativePrecision)) {
+        mpz_fdiv_r_2exp(m_val.get_mpz_t(), m_val.get_mpz_t(), N);
+      } else {
+        m_val = apply_mask(m_val);
+      }
+    }
 
     static _Bits from_string(const std::string &str) {
       if constexpr (std::is_same_v<StorageType, mpz_class>) {
@@ -2373,7 +2388,7 @@ namespace udb {
 
     template <unsigned _N = N>
       requires(N > BitsMaxNativePrecision)
-    static StorageType mask() {
+    static const StorageType &mask() {
       return _Bits<N, Signed>::mask();
     }
 
