@@ -1,0 +1,1412 @@
+# Copyright (c) Openchip and Software Technologies, S.L.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+%version: 1.0
+
+# Floating-point and microscaled (MX) arithmetic of the Zvvm (Integrated Matrix)
+# multiply-accumulate instructions.
+# Source: https://github.com/riscv/integrated-matrix-extension (tag v0.9.0-on-main)
+#
+# The functions below follow the shared pseudocode of the specification. Each
+# function names the specification helper it implements. The specification
+# leaves its exact internal value, fp_internal, abstract. Here it is ZvvmFpx,
+# (-1)^sign x mant x 2^exp with a 128-bit significand. Exact group sums of BF16,
+# FP32 and FP64 products can need up to 4201 bits; they use the fixed-point long
+# accumulator ZvvmFpxLong instead.
+
+# ─── Formats ─────────────────────────────────────────────────────────────
+
+enum ZvvmFpFmt {
+  E2M1 0 # OFP4
+  E4M3 1 # OFP8
+  E5M2 2 # OFP8
+  FP16 3 # IEEE binary16
+  BF16 4 # BFloat16
+  FP32 5 # IEEE binary32
+  FP64 6 # IEEE binary64
+}
+
+function zvvm_fp_format_of {
+  returns ZvvmFpFmt
+  arguments
+    U32 eew,
+    Bits<1> alt
+  description {
+    Return the floating-point format of an element of width +eew+ whose
+    alternate-format bit (vtype.ALTFMT, ALTFMTA or ALTFMTB) is +alt+
+    (specification `fp_format_of`).
+  }
+  body {
+    if (eew == 4) {
+      return ZvvmFpFmt::E2M1;
+    } else if (eew == 8) {
+      return (alt == 1) ? ZvvmFpFmt::E5M2 : ZvvmFpFmt::E4M3;
+    } else if (eew == 16) {
+      return (alt == 1) ? ZvvmFpFmt::BF16 : ZvvmFpFmt::FP16;
+    } else if (eew == 32) {
+      return ZvvmFpFmt::FP32;
+    }
+    return ZvvmFpFmt::FP64;
+  }
+}
+
+function zvvm_fp_ebits {
+  returns U32
+  arguments ZvvmFpFmt f
+  description {
+    Return the number of exponent bits of format +f+.
+  }
+  body {
+    if (f == ZvvmFpFmt::E2M1) {
+      return 2;
+    } else if (f == ZvvmFpFmt::E4M3) {
+      return 4;
+    } else if ((f == ZvvmFpFmt::E5M2) || (f == ZvvmFpFmt::FP16)) {
+      return 5;
+    } else if ((f == ZvvmFpFmt::BF16) || (f == ZvvmFpFmt::FP32)) {
+      return 8;
+    }
+    return 11;
+  }
+}
+
+function zvvm_fp_mbits {
+  returns U32
+  arguments ZvvmFpFmt f
+  description {
+    Return the number of stored fraction bits of format +f+. The significand
+    precision is one more.
+  }
+  body {
+    if (f == ZvvmFpFmt::E2M1) {
+      return 1;
+    } else if (f == ZvvmFpFmt::E4M3) {
+      return 3;
+    } else if (f == ZvvmFpFmt::E5M2) {
+      return 2;
+    } else if (f == ZvvmFpFmt::FP16) {
+      return 10;
+    } else if (f == ZvvmFpFmt::BF16) {
+      return 7;
+    } else if (f == ZvvmFpFmt::FP32) {
+      return 23;
+    }
+    return 52;
+  }
+}
+
+function zvvm_fp_bias {
+  returns U32
+  arguments ZvvmFpFmt f
+  description {
+    Return the exponent bias of format +f+.
+  }
+  body {
+    return (32'b1 << (zvvm_fp_ebits(f) - 1)) - 1;
+  }
+}
+
+function zvvm_fp_pack {
+  returns Bits<64>
+  arguments
+    ZvvmFpFmt f,
+    Bits<1> sign,
+    Bits<64> biased_exp,
+    Bits<64> frac
+  description {
+    Assemble the encoding of format +f+ from its sign, biased exponent and
+    fraction fields, zero-extended to 64 bits.
+  }
+  body {
+    U32 mbits = zvvm_fp_mbits(f);
+    Bits<64> sign_bit = sign;
+    return (sign_bit << (zvvm_fp_ebits(f) + mbits)) | (biased_exp << mbits) | frac;
+  }
+}
+
+function zvvm_fp_default_nan {
+  returns Bits<64>
+  arguments ZvvmFpFmt f
+  description {
+    Return the default (canonical) NaN of format +f+ (specification
+    `fp_defaultNaN`): a positive sign, an all-ones exponent and only the most
+    significant fraction bit set. E4M3 has a single NaN encoding, S.1111.111.
+    E2M1 has no NaN.
+  }
+  body {
+    assert(f != ZvvmFpFmt::E2M1, "E2M1 has no NaN");
+    if (f == ZvvmFpFmt::E4M3) {
+      return 64'h7f;
+    }
+    U32 mbits = zvvm_fp_mbits(f);
+    return zvvm_fp_pack(f, 0, (64'b1 << zvvm_fp_ebits(f)) - 1, 64'b1 << (mbits - 1));
+  }
+}
+
+function zvvm_fp_one {
+  returns Bits<64>
+  arguments ZvvmFpFmt f
+  description {
+    Return the encoding of +1.0 in format +f+ (specification `fp_one`).
+  }
+  body {
+    return zvvm_fp_pack(f, 0, zvvm_fp_bias(f), 0);
+  }
+}
+
+# ─── Exact internal values ───────────────────────────────────────────────
+
+enum ZvvmFpxKind {
+  Finite 0 # (-1)^sign x mant x 2^exp; a zero when mant is 0
+  Inf    1 # an infinity with the given sign
+  NaN    2 # any NaN; the payload is not architecturally significant
+}
+
+# Exact internal value (specification fp_internal).
+# A finite value is (-1)^sign x mant x 2^exp, with exp read as a signed number.
+# A zero has mant = 0 and exp = 0, and its sign is significant.
+# 128 bits hold any single product (at most 106 bits), every exact group sum of
+# FP16, OFP8 or OFP4 products (at most 87 bits) and every microscaled group sum
+# multiplied by its block scale (at most 122 bits).
+struct ZvvmFpx {
+  ZvvmFpxKind kind;
+  Bits<1> sign;
+  Bits<128> mant;
+  Bits<32> exp;
+}
+
+function zvvm_fpx_finite {
+  returns ZvvmFpx
+  arguments
+    Bits<1> sign,
+    Bits<128> mant,
+    Bits<32> exp
+  description {
+    Return the finite internal value (-1)^+sign+^ × +mant+ × 2^+exp+^.
+    A zero +mant+ gives a zero with exponent 0.
+  }
+  body {
+    ZvvmFpx x;
+    x.kind = ZvvmFpxKind::Finite;
+    x.sign = sign;
+    x.mant = mant;
+    x.exp = (mant == 0) ? 0 : exp;
+    return x;
+  }
+}
+
+function zvvm_fpx_special {
+  returns ZvvmFpx
+  arguments
+    ZvvmFpxKind kind,
+    Bits<1> sign
+  description {
+    Return the internal value of kind +kind+ (an infinity or a NaN) with sign
+    +sign+.
+  }
+  body {
+    ZvvmFpx x;
+    x.kind = kind;
+    x.sign = sign;
+    x.mant = 0;
+    x.exp = 0;
+    return x;
+  }
+}
+
+function zvvm_fp_internal_zero {
+  returns ZvvmFpx
+  description {
+    Return the internal value +0 (specification `fp_internal_zero`).
+  }
+  body {
+    return zvvm_fpx_finite(0, 0, 0);
+  }
+}
+
+function zvvm_bit_length128 {
+  returns U32
+  arguments Bits<128> value
+  description {
+    Return the number of significant bits of +value+, or 0 when +value+ is 0.
+  }
+  body {
+    U32 n = 0;
+    Bits<128> v = value;
+    for (U32 sh = 64; sh > 0; sh = sh >> 1) {
+      if ((v >> sh) != 0) {
+        n = n + sh;
+        v = v >> sh;
+      }
+    }
+    return (v != 0) ? (n + 1) : n;
+  }
+}
+
+function zvvm_shift_right_jam128 {
+  returns Bits<128>
+  arguments
+    Bits<128> value,
+    Bits<32> shift
+  description {
+    Shift +value+ right by +shift+ bits, and set the least significant bit of
+    the result if any nonzero bit was shifted out.
+  }
+  body {
+    if (shift >= 128) {
+      return (value != 0) ? 1 : 0;
+    }
+    Bits<128> r = value >> shift;
+    return ((r << shift) != value) ? (r | 1) : r;
+  }
+}
+
+function zvvm_fpx_top {
+  returns Bits<32>
+  arguments ZvvmFpx x
+  description {
+    Return the exponent of the most significant set bit of the nonzero finite
+    value +x+: the value lies in [2^e^, 2^e+1^).
+  }
+  body {
+    return $signed(x.exp) + $signed(zvvm_bit_length128(x.mant)) - 32'sd1;
+  }
+}
+
+function zvvm_fp_signaling_nan? {
+  returns Boolean
+  arguments
+    ZvvmFpFmt f,
+    Bits<64> value
+  description {
+    Return true if the encoding +value+ of format +f+ is a signaling NaN.
+
+    The IEEE formats and E5M2 follow the IEEE 754 convention: a NaN is
+    signaling when the most significant fraction bit is clear. The ISA manual
+    states that the OCP formats are IEEE-compatible, and the specification
+    handles special values by the rules of the operand formats. E5M2
+    S.11111.01 is therefore signaling. The single E4M3 NaN, S.1111.111, is
+    quiet, and E2M1 has no NaN.
+
+    The Sail model treats every OFP8 NaN as quiet.
+  }
+  body {
+    if ((f == ZvvmFpFmt::E2M1) || (f == ZvvmFpFmt::E4M3)) {
+      return false;
+    }
+    U32 mbits = zvvm_fp_mbits(f);
+    Bits<64> e_max = (64'b1 << zvvm_fp_ebits(f)) - 1;
+    Bits<64> m = value & ((64'b1 << mbits) - 1);
+    Bits<64> e = (value >> mbits) & e_max;
+    return (e == e_max) && (m != 0) && (((m >> (mbits - 1)) & 1) == 0);
+  }
+}
+
+function zvvm_fp_decode {
+  returns ZvvmFpx
+  arguments
+    ZvvmFpFmt f,
+    Bits<64> value
+  description {
+    Return the exact value of the encoding +value+ (zero-extended) of format
+    +f+. Raises no flags.
+
+    E2M1 has no special values. E4M3 has no infinity and a single NaN,
+    S.1111.111. The other formats use the IEEE 754 encodings of infinity and
+    NaN.
+  }
+  body {
+    U32 mbits = zvvm_fp_mbits(f);
+    U32 bias = zvvm_fp_bias(f);
+    Bits<64> e_max = (64'b1 << zvvm_fp_ebits(f)) - 1;
+    Bits<64> m = value & ((64'b1 << mbits) - 1);
+    Bits<64> e = (value >> mbits) & e_max;
+    Bits<1> sign = value[zvvm_fp_ebits(f) + mbits];
+
+    if (f == ZvvmFpFmt::E4M3) {
+      if ((e == e_max) && (m == 7)) {
+        return zvvm_fpx_special(ZvvmFpxKind::NaN, sign);
+      }
+    } else if ((f != ZvvmFpFmt::E2M1) && (e == e_max)) {
+      return zvvm_fpx_special((m == 0) ? ZvvmFpxKind::Inf : ZvvmFpxKind::NaN, sign);
+    }
+
+    if (e == 0) {
+      # zero or subnormal: m x 2^(1 - bias - mbits)
+      return zvvm_fpx_finite(sign, m, 32'sd1 - $signed(bias) - $signed(mbits));
+    }
+    # normal: (2^mbits + m) x 2^(e - bias - mbits)
+    return zvvm_fpx_finite(sign, (64'b1 << mbits) | m, $signed(e[31:0]) - $signed(bias) - $signed(mbits));
+  }
+}
+
+function zvvm_fp_operand {
+  returns ZvvmFpx
+  arguments
+    ZvvmFpFmt f,
+    Bits<64> value
+  description {
+    Return the exact value of the operand +value+ of format +f+, and raise the
+    invalid-operation flag if it is a signaling NaN.
+  }
+  body {
+    if (zvvm_fp_signaling_nan?(f, value)) {
+      set_fp_flag(FpFlag::NV);
+    }
+    return zvvm_fp_decode(f, value);
+  }
+}
+
+function zvvm_fp_is_nan? {
+  returns Boolean
+  arguments
+    Bits<64> value,
+    ZvvmFpFmt f
+  description {
+    Return true if the encoding +value+ of format +f+ is a NaN
+    (specification `fp_is_NaN`).
+  }
+  body {
+    return zvvm_fp_decode(f, value).kind == ZvvmFpxKind::NaN;
+  }
+}
+
+function zvvm_fpx_mul {
+  returns ZvvmFpx
+  arguments
+    ZvvmFpx a,
+    ZvvmFpx b
+  description {
+    Return the exact product of +a+ and +b+. Zero times infinity raises the
+    invalid-operation flag and returns a NaN.
+  }
+  body {
+    Bits<1> sign = a.sign ^ b.sign;
+    if ((a.kind == ZvvmFpxKind::NaN) || (b.kind == ZvvmFpxKind::NaN)) {
+      return zvvm_fpx_special(ZvvmFpxKind::NaN, 0);
+    }
+    if ((a.kind == ZvvmFpxKind::Inf) || (b.kind == ZvvmFpxKind::Inf)) {
+      if (((a.kind == ZvvmFpxKind::Finite) && (a.mant == 0)) ||
+          ((b.kind == ZvvmFpxKind::Finite) && (b.mant == 0))) {
+        set_fp_flag(FpFlag::NV);
+        return zvvm_fpx_special(ZvvmFpxKind::NaN, 0);
+      }
+      return zvvm_fpx_special(ZvvmFpxKind::Inf, sign);
+    }
+    # The product of the significands fits in 128 bits; see ZvvmFpx.
+    return zvvm_fpx_finite(sign, a.mant * b.mant, a.exp + b.exp);
+  }
+}
+
+function zvvm_fp_mul_exact {
+  returns ZvvmFpx
+  arguments
+    Bits<64> a,
+    ZvvmFpFmt fmt_a,
+    Bits<64> b,
+    ZvvmFpFmt fmt_b
+  description {
+    Return the exact product of the operands +a+ of format +fmt_a+ and +b+ of
+    format +fmt_b+ (specification `fp_mul_exact`). A signaling NaN operand, or
+    zero times infinity, raises the invalid-operation flag.
+  }
+  body {
+    return zvvm_fpx_mul(zvvm_fp_operand(fmt_a, a), zvvm_fp_operand(fmt_b, b));
+  }
+}
+
+function zvvm_fp_internal_add {
+  returns ZvvmFpx
+  arguments
+    ZvvmFpx a,
+    ZvvmFpx b,
+    RoundingMode rm
+  description {
+    Return the sum of the internal values +a+ and +b+ (specification
+    `fp_internal_add`). Adding infinities of opposite signs raises the
+    invalid-operation flag and returns a NaN.
+
+    An exact-zero sum follows IEEE 754 section 6.3: the sum of two zeros of the
+    same sign has that sign, and any other exact-zero sum is +0, or -0 when
+    +rm+ is RDN.
+
+    The sum is exact when it spans at most 125 bits, from the most
+    significant bit of the larger operand to the least significant bit of
+    either operand. This always holds in a group sum of FP16, OFP8 or OFP4
+    products. Beyond 125 bits the bits of the smaller operand below that span
+    are replaced by a sticky bit. The result then rounds to any format of
+    precision at most 53 bits exactly as the exact sum would, with the same
+    flags, so a sum of two operands that is rounded next can use this function.
+  }
+  body {
+    if ((a.kind == ZvvmFpxKind::NaN) || (b.kind == ZvvmFpxKind::NaN)) {
+      return zvvm_fpx_special(ZvvmFpxKind::NaN, 0);
+    }
+    if ((a.kind == ZvvmFpxKind::Inf) && (b.kind == ZvvmFpxKind::Inf) && (a.sign != b.sign)) {
+      set_fp_flag(FpFlag::NV);
+      return zvvm_fpx_special(ZvvmFpxKind::NaN, 0);
+    }
+    if (a.kind == ZvvmFpxKind::Inf) {
+      return a;
+    }
+    if (b.kind == ZvvmFpxKind::Inf) {
+      return b;
+    }
+
+    Bits<1> cancel_sign = (rm == RoundingMode::RDN) ? 1 : 0;
+    if ((a.mant == 0) && (b.mant == 0)) {
+      return zvvm_fpx_finite((a.sign == b.sign) ? a.sign : cancel_sign, 0, 0);
+    }
+    if (a.mant == 0) {
+      return b;
+    }
+    if (b.mant == 0) {
+      return a;
+    }
+
+    # x is the operand with the larger leading-bit exponent.
+    ZvvmFpx x = a;
+    ZvvmFpx y = b;
+    if ($signed(zvvm_fpx_top(b)) > $signed(zvvm_fpx_top(a))) {
+      x = b;
+      y = a;
+    }
+
+    # Common least significant bit: the smaller exponent, but no lower than
+    # 125 bits below the leading bit of x. x has at most 125 significant bits,
+    # so it always aligns exactly.
+    Bits<32> lsb = ($signed(x.exp) < $signed(y.exp)) ? x.exp : y.exp;
+    Bits<32> lsb_min = $signed(zvvm_fpx_top(x)) - 32'sd125;
+    if ($signed(lsb) < $signed(lsb_min)) {
+      lsb = lsb_min;
+    }
+    Bits<128> mx = x.mant << (x.exp - lsb);
+    Bits<128> my = ($signed(y.exp) >= $signed(lsb))
+      ? (y.mant << (y.exp - lsb))
+      : zvvm_shift_right_jam128(y.mant, lsb - y.exp);
+
+    Bits<128> m = 0;
+    Bits<1> sign = x.sign;
+    if (x.sign == y.sign) {
+      m = mx + my;
+    } else if (mx >= my) {
+      m = mx - my;
+    } else {
+      m = my - mx;
+      sign = y.sign;
+    }
+    if (m == 0) {
+      return zvvm_fpx_finite(cancel_sign, 0, 0);
+    }
+
+    # Keep at most 125 significant bits for the next operation.
+    U32 len = zvvm_bit_length128(m);
+    if (len > 125) {
+      m = zvvm_shift_right_jam128(m, len - 125);
+      lsb = lsb + (len - 125);
+    }
+    return zvvm_fpx_finite(sign, m, lsb);
+  }
+}
+
+function zvvm_fp_internal_scale {
+  returns ZvvmFpx
+  arguments
+    Bits<64> scale,
+    ZvvmFpFmt f,
+    ZvvmFpx s
+  description {
+    Return the exact product of the internal value +s+ and the block scale
+    +scale+ of format +f+ (specification `fp_internal_scale`). An infinite
+    scale times a zero +s+ raises the invalid-operation flag and returns a NaN.
+  }
+  body {
+    return zvvm_fpx_mul(zvvm_fp_operand(f, scale), s);
+  }
+}
+
+# ─── Rounding ────────────────────────────────────────────────────────────
+
+function zvvm_round_to_quantum {
+  returns Bits<128>, Boolean
+  arguments
+    Bits<1> sign,
+    Bits<128> mant,
+    Bits<32> exp,
+    Bits<32> q,
+    RoundingMode rm,
+    Boolean rto
+  description {
+    Round the nonzero value (-1)^+sign+^ × +mant+ × 2^+exp+^ to an integer
+    multiple r × 2^+q+^, with rounding mode +rm+, or with round-to-odd when +rto+
+    is true. Return the magnitude r and whether the rounding was inexact.
+  }
+  body {
+    if ($signed(exp) >= $signed(q)) {
+      return mant << (exp - q), false;
+    }
+    Bits<32> shift = q - exp;
+    Bits<128> r = 0;
+    Boolean round_bit = false;
+    Boolean sticky = true;
+    if (shift <= 128) {
+      r = mant >> shift;
+      round_bit = ((mant >> (shift - 1)) & 1) == 1;
+      sticky = (mant & ((128'b1 << (shift - 1)) - 1)) != 0;
+    }
+    Boolean inexact = round_bit || sticky;
+
+    if (rto) {
+      # round to odd: truncate, then set the least significant bit if inexact
+      return inexact ? (r | 1) : r, inexact;
+    }
+    Boolean up = false;
+    if (rm == RoundingMode::RNE) {
+      up = round_bit && (sticky || ((r & 1) == 1));
+    } else if (rm == RoundingMode::RDN) {
+      up = (sign == 1) && inexact;
+    } else if (rm == RoundingMode::RUP) {
+      up = (sign == 0) && inexact;
+    } else if (rm == RoundingMode::RMM) {
+      up = round_bit;
+    }
+    return up ? (r + 1) : r, inexact;
+  }
+}
+
+function zvvm_fpx_round {
+  returns Bits<64>
+  arguments
+    ZvvmFpx x,
+    ZvvmFpFmt f,
+    RoundingMode rm,
+    Boolean rto
+  description {
+    Round the internal value +x+ to format +f+ with rounding mode +rm+, or with
+    round-to-odd when +rto+ is true, and return the encoding zero-extended to
+    64 bits. Raises the inexact, underflow and overflow flags.
+
+    Tininess is detected after rounding, as for the other RISC-V
+    floating-point instructions. Underflow is raised only for an inexact tiny
+    result. On overflow the result is an infinity or the largest finite value,
+    as IEEE 754 defines for +rm+. Round-to-odd always gives the largest finite
+    value. A NaN result is the default NaN.
+
+    +f+ is a C accumulator format with IEEE 754 special values: E5M2, FP16,
+    BF16, FP32 or FP64.
+  }
+  body {
+    assert((f != ZvvmFpFmt::E2M1) && (f != ZvvmFpFmt::E4M3), "no rounding to E2M1 or E4M3");
+    U32 mbits = zvvm_fp_mbits(f);
+    U32 bias = zvvm_fp_bias(f);
+    Bits<64> e_max = (64'b1 << zvvm_fp_ebits(f)) - 1;
+
+    if (x.kind == ZvvmFpxKind::NaN) {
+      return zvvm_fp_default_nan(f);
+    }
+    if (x.kind == ZvvmFpxKind::Inf) {
+      return zvvm_fp_pack(f, x.sign, e_max, 0);
+    }
+    if (x.mant == 0) {
+      return zvvm_fp_pack(f, x.sign, 0, 0);
+    }
+
+    Bits<128> carry_out = 128'b1 << (mbits + 1);
+    Bits<32> emin = 32'sd1 - $signed(bias);
+    Bits<32> top = zvvm_fpx_top(x);
+    Bits<128> r = 0;
+    Boolean inexact = false;
+
+    # Tininess after rounding: round to mbits + 1 bits with unbounded exponent.
+    (r, inexact) = zvvm_round_to_quantum(x.sign, x.mant, x.exp, $signed(top) - $signed(mbits), rm, rto);
+    Bits<32> top_after = (r == carry_out) ? (top + 1) : top;
+    Boolean tiny = $signed(top_after) < $signed(emin);
+
+    # Round to the format; subnormals share the quantum of the smallest normal.
+    Bits<32> q = $signed(($signed(top) > $signed(emin)) ? top : emin) - $signed(mbits);
+    (r, inexact) = zvvm_round_to_quantum(x.sign, x.mant, x.exp, q, rm, rto);
+    if (r == carry_out) {
+      r = r >> 1;
+      q = q + 1;
+    }
+    Boolean normal = r >= (128'b1 << mbits);
+    Bits<32> biased = normal ? (q + mbits + bias) : 0;
+    Bits<64> frac = normal ? (r - (128'b1 << mbits)) : r;
+
+    if ($signed(biased) >= $signed(e_max)) {
+      set_fp_flag(FpFlag::OF);
+      set_fp_flag(FpFlag::NX);
+      Boolean to_inf = !rto &&
+        ((rm == RoundingMode::RNE) || (rm == RoundingMode::RMM) ||
+         ((rm == RoundingMode::RUP) && (x.sign == 0)) ||
+         ((rm == RoundingMode::RDN) && (x.sign == 1)));
+      return to_inf
+        ? zvvm_fp_pack(f, x.sign, e_max, 0)
+        : zvvm_fp_pack(f, x.sign, e_max - 1, (64'b1 << mbits) - 1);
+    }
+    if (inexact) {
+      set_fp_flag(FpFlag::NX);
+      if (tiny) {
+        set_fp_flag(FpFlag::UF);
+      }
+    }
+    return zvvm_fp_pack(f, x.sign, biased, frac);
+  }
+}
+
+function zvvm_fp_round_to_frm {
+  returns Bits<64>
+  arguments
+    ZvvmFpx s,
+    ZvvmFpFmt f,
+    RoundingMode rm
+  description {
+    Round the internal value +s+ to the C accumulator format +f+ with the
+    dynamic rounding mode +rm+ (specification `fp_round_to_frm`).
+  }
+  body {
+    return zvvm_fpx_round(s, f, rm, false);
+  }
+}
+
+function zvvm_fp_round_to_rto {
+  returns Bits<64>
+  arguments
+    ZvvmFpx s,
+    ZvvmFpFmt f
+  description {
+    Round the internal value +s+ to the C accumulator format +f+ with
+    round-to-odd (specification `fp_round_to_rto`).
+  }
+  body {
+    return zvvm_fpx_round(s, f, RoundingMode::RNE, true);
+  }
+}
+
+# ─── Operations in the C accumulator format ──────────────────────────────
+
+function zvvm_fp_add {
+  returns Bits<64>
+  arguments
+    Bits<64> a,
+    Bits<64> b,
+    ZvvmFpFmt f,
+    RoundingMode rm
+  description {
+    Return +a+ + +b+, both of format +f+, rounded with +rm+
+    (specification `fp_add`).
+  }
+  body {
+    return zvvm_fpx_round(zvvm_fp_internal_add(zvvm_fp_operand(f, a), zvvm_fp_operand(f, b), rm), f, rm, false);
+  }
+}
+
+function zvvm_fp_mul {
+  returns Bits<64>
+  arguments
+    Bits<64> a,
+    Bits<64> b,
+    ZvvmFpFmt f,
+    RoundingMode rm
+  description {
+    Return +a+ × +b+, both of format +f+, rounded with +rm+
+    (specification `fp_mul`).
+  }
+  body {
+    return zvvm_fpx_round(zvvm_fpx_mul(zvvm_fp_operand(f, a), zvvm_fp_operand(f, b)), f, rm, false);
+  }
+}
+
+function zvvm_fp_add_internal {
+  returns Bits<64>
+  arguments
+    Bits<64> acc,
+    ZvvmFpx s,
+    ZvvmFpFmt f,
+    RoundingMode rm
+  description {
+    Return +acc+ + +s+, where +acc+ is of the C accumulator format +f+ and +s+
+    is an internal value, with a single rounding with +rm+
+    (specification `fp_add_internal`).
+  }
+  body {
+    return zvvm_fpx_round(zvvm_fp_internal_add(zvvm_fp_operand(f, acc), s, rm), f, rm, false);
+  }
+}
+
+function zvvm_decode_scale {
+  returns Bits<64>
+  arguments
+    Bits<8> scale,
+    ZvvmFpFmt f,
+    RoundingMode rm
+  description {
+    Convert the E8M0 block scale +scale+ to format +f+ with rounding mode +rm+
+    (specification `decode_scale`). 0xFF is NaN and gives the default NaN.
+    Any other value is 2^+scale+ - 127^, rounded to +f+; the conversion can
+    overflow or underflow and raises the flags of that rounding.
+  }
+  body {
+    if (scale == 8'hff) {
+      return zvvm_fp_default_nan(f);
+    }
+    Bits<32> e = scale;
+    return zvvm_fpx_round(zvvm_fpx_finite(0, 1, $signed(e) - 32'sd127), f, rm, false);
+  }
+}
+
+function zvvm_int_to_fp {
+  returns Bits<64>
+  arguments
+    Bits<64> value,
+    ZvvmFpFmt f,
+    RoundingMode rm
+  description {
+    Convert the signed integer +value+ to format +f+ with rounding mode +rm+
+    (specification `int_to_fp`). Zero converts to +0.
+  }
+  body {
+    Bits<1> sign = value[63];
+    Bits<64> mag = (sign == 1) ? -value : value;
+    return zvvm_fpx_round(zvvm_fpx_finite(sign, mag, 0), f, rm, false);
+  }
+}
+
+# ─── Long accumulator ────────────────────────────────────────────────────
+
+# Exponent of bit 0 of the long accumulator: the quantum of the smallest
+# FP64 x FP64 product, 2^-1074 x 2^-1074.
+Bits<32> ZVVM_FP_LONG_LSB = 32'd2148;
+
+# Exact sum in a fixed-point frame (a Kulisch accumulator), used for the exact
+# group sums of BF16, FP32 and FP64 products, which can span up to 4201 bits.
+# acc is two's complement and bit 0 weighs 2^-2148. An FP64 x FP64 product
+# lies within 2^-2148 .. 2^2048 (4196 bits). A group holds at most 32 such
+# products, since lambda is at most 32 for SEW=64, which adds 5 carry bits.
+# The C operand that rnd=xct adds needs no extra bit. 4201 bits round up to 66
+# 64-bit limbs.
+struct ZvvmFpxLong {
+  ZvvmFpxKind kind;   # Finite, Inf or NaN
+  Bits<1> sign;       # sign of an infinity, or of an exact-zero sum
+  Bits<4224> acc;     # the finite sum
+}
+
+function zvvm_fpx_long_zero {
+  returns ZvvmFpxLong
+  description {
+    Return a long accumulator that holds +0.
+  }
+  body {
+    ZvvmFpxLong l;
+    l.kind = ZvvmFpxKind::Finite;
+    l.sign = 0;
+    l.acc = 0;
+    return l;
+  }
+}
+
+function zvvm_fpx_long_add {
+  returns ZvvmFpxLong
+  arguments
+    ZvvmFpxLong l,
+    ZvvmFpx x,
+    RoundingMode rm
+  description {
+    Add the internal value +x+ exactly to the long accumulator +l+
+    (`acc_add`). Special values and the sign of an exact-zero sum follow
+    `zvvm_fp_internal_add`, applied in order.
+  }
+  body {
+    ZvvmFpxLong r = l;
+    if (l.kind == ZvvmFpxKind::NaN) {
+      return r;
+    }
+    if (x.kind == ZvvmFpxKind::NaN) {
+      r.kind = ZvvmFpxKind::NaN;
+      return r;
+    }
+    if (l.kind == ZvvmFpxKind::Inf) {
+      if ((x.kind == ZvvmFpxKind::Inf) && (x.sign != l.sign)) {
+        set_fp_flag(FpFlag::NV);
+        r.kind = ZvvmFpxKind::NaN;
+      }
+      return r;
+    }
+    if (x.kind == ZvvmFpxKind::Inf) {
+      r.kind = ZvvmFpxKind::Inf;
+      r.sign = x.sign;
+      return r;
+    }
+
+    Bits<1> cancel_sign = (rm == RoundingMode::RDN) ? 1 : 0;
+    if (x.mant == 0) {
+      if ((l.acc == 0) && (l.sign != x.sign)) {
+        r.sign = cancel_sign;
+      }
+      return r;
+    }
+    assert($signed(x.exp) >= -$signed(ZVVM_FP_LONG_LSB), "value below the long accumulator");
+    Bits<4224> term = x.mant;
+    term = term << (x.exp + ZVVM_FP_LONG_LSB);
+    r.acc = (x.sign == 1) ? (l.acc - term) : (l.acc + term);
+    if (r.acc == 0) {
+      r.sign = cancel_sign;
+    }
+    return r;
+  }
+}
+
+function zvvm_bit_length4224 {
+  returns U32
+  arguments Bits<4224> value
+  description {
+    Return the number of significant bits of +value+, or 0 when +value+ is 0.
+  }
+  body {
+    U32 n = 0;
+    Bits<4224> v = value;
+    for (U32 sh = 4096; sh > 0; sh = sh >> 1) {
+      if ((v >> sh) != 0) {
+        n = n + sh;
+        v = v >> sh;
+      }
+    }
+    return (v != 0) ? (n + 1) : n;
+  }
+}
+
+function zvvm_fpx_long_extract {
+  returns ZvvmFpx
+  arguments
+    ZvvmFpxLong l,
+    ZvvmFpFmt f
+  description {
+    Return the value of the long accumulator +l+ for one rounding to format +f+
+    (`acc_extract`): the most significant p + 3 bits of the sum, where p is the
+    precision of +f+, followed by a sticky bit that is set if any lower bit is
+    nonzero. Rounding this value to +f+ with any rounding mode, or with
+    round-to-odd, gives the same result and flags as rounding the exact sum.
+  }
+  body {
+    if (l.kind != ZvvmFpxKind::Finite) {
+      return zvvm_fpx_special(l.kind, l.sign);
+    }
+    if (l.acc == 0) {
+      return zvvm_fpx_finite(l.sign, 0, 0);
+    }
+    Bits<1> sign = l.acc[4223];
+    Bits<4224> mag = (sign == 1) ? -l.acc : l.acc;
+    U32 len = zvvm_bit_length4224(mag);
+    U32 keep = zvvm_fp_mbits(f) + 4;
+    if (len <= keep) {
+      return zvvm_fpx_finite(sign, mag[127:0], -$signed(ZVVM_FP_LONG_LSB));
+    }
+    U32 shift = len - keep;
+    Bits<4224> top = mag >> shift;
+    Bits<128> m = top[127:0] << 1;
+    if ((top << shift) != mag) {
+      m = m | 1;
+    }
+    return zvvm_fpx_finite(sign, m, $signed(shift) - 32'sd1 - $signed(ZVVM_FP_LONG_LSB));
+  }
+}
+
+function zvvm_fp_add_internal_long {
+  returns Bits<64>
+  arguments
+    Bits<64> acc,
+    ZvvmFpxLong l,
+    ZvvmFpFmt f,
+    RoundingMode rm
+  description {
+    Return +acc+ + the exact sum held in +l+, where +acc+ is of the C
+    accumulator format +f+, with a single rounding with +rm+
+    (specification `fp_add_internal`). +acc+ is added to the long accumulator
+    before the result is extracted, so the sum is exact before the rounding.
+  }
+  body {
+    ZvvmFpxLong sum = zvvm_fpx_long_add(l, zvvm_fp_operand(f, acc), rm);
+    return zvvm_fpx_round(zvvm_fpx_long_extract(sum, f), f, rm, false);
+  }
+}
+
+# ─── Group sums ──────────────────────────────────────────────────────────
+
+function zvvm_fp_wide_input? {
+  returns Boolean
+  arguments ZvvmFpFmt f
+  description {
+    Return true if products of format +f+ can need more than 128 bits in an
+    exact sum of three or more terms: BF16, FP32 and FP64.
+  }
+  body {
+    return (f == ZvvmFpFmt::BF16) || (f == ZvvmFpFmt::FP32) || (f == ZvvmFpFmt::FP64);
+  }
+}
+
+function zvvm_fp_long_sum? {
+  returns Boolean
+  arguments
+    ZvvmFpFmt fmt_a,
+    ZvvmFpFmt fmt_b,
+    U32 n,
+    Bits<2> rnd
+  description {
+    Return true if an exact group sum of +n+ products of formats +fmt_a+ and
+    +fmt_b+ needs the long accumulator. +rnd+ is the disclosed group rounding
+    (0 frm, 1 rto, 2 xct).
+
+    Products of BF16, FP32 or FP64 inputs need it when three or more exact
+    terms are summed before the next rounding: more than two products, or two
+    products and the C operand with rnd=xct. For fewer terms,
+    `zvvm_fp_internal_add` rounds exactly as the exact sum would.
+  }
+  body {
+    if (!zvvm_fp_wide_input?(fmt_a) && !zvvm_fp_wide_input?(fmt_b)) {
+      return false;
+    }
+    return (n > 2) || ((n == 2) && (rnd == 2));
+  }
+}
+
+function zvvm_fp_group_sum {
+  returns ZvvmFpx
+  arguments
+    ZvvmGemmGeom g,
+    U32 i,
+    U32 j,
+    U32 k_lo,
+    U32 k_hi,
+    ZvvmFpFmt fmt_a,
+    ZvvmFpFmt fmt_b,
+    RoundingMode rm,
+    Bits<5> vs1,
+    Bits<5> vs2
+  description {
+    Return the exact partial sum S of the products A[+i+, k] × B^T^[k, +j+]
+    for k from +k_lo+ to +k_hi+ (specification `fp_group_sum` with psm=0),
+    added in increasing k order.
+
+    The sum is exact for FP16, OFP8 and OFP4 inputs. For BF16, FP32 and FP64
+    inputs it is used only when `zvvm_fp_long_sum?` is false, where it rounds
+    as the exact sum would.
+  }
+  body {
+    ZvvmFpx s = zvvm_fp_internal_zero();
+    for (U32 k = k_lo; k <= k_hi; k++) {
+      U32 a_flat = zvvm_tile_reg_idx((i * g.k_eff) + k, g.lmul, g.lambda * g.w, g.epr_a);
+      U32 b_flat = zvvm_tile_reg_idx((j * g.k_eff) + k, g.lmul, g.lambda * g.w, g.epr_a);
+      ZvvmFpx prod = zvvm_fp_mul_exact(
+        zvvm_read_elem(g.eew_a, a_flat, vs1), fmt_a,
+        zvvm_read_elem(g.eew_a, b_flat, vs2), fmt_b);
+      s = zvvm_fp_internal_add(s, prod, rm);
+    }
+    return s;
+  }
+}
+
+function zvvm_fp_group_sum_long {
+  returns ZvvmFpxLong
+  arguments
+    ZvvmGemmGeom g,
+    U32 i,
+    U32 j,
+    U32 k_lo,
+    U32 k_hi,
+    ZvvmFpFmt fmt_a,
+    ZvvmFpFmt fmt_b,
+    RoundingMode rm,
+    Bits<5> vs1,
+    Bits<5> vs2
+  description {
+    Return the exact partial sum S of `zvvm_fp_group_sum` in a long
+    accumulator, for BF16, FP32 and FP64 inputs.
+  }
+  body {
+    ZvvmFpxLong s = zvvm_fpx_long_zero();
+    for (U32 k = k_lo; k <= k_hi; k++) {
+      U32 a_flat = zvvm_tile_reg_idx((i * g.k_eff) + k, g.lmul, g.lambda * g.w, g.epr_a);
+      U32 b_flat = zvvm_tile_reg_idx((j * g.k_eff) + k, g.lmul, g.lambda * g.w, g.epr_a);
+      ZvvmFpx prod = zvvm_fp_mul_exact(
+        zvvm_read_elem(g.eew_a, a_flat, vs1), fmt_a,
+        zvvm_read_elem(g.eew_a, b_flat, vs2), fmt_b);
+      s = zvvm_fpx_long_add(s, prod, rm);
+    }
+    return s;
+  }
+}
+
+# The psm=1 reduction is implementation-defined: an implementation that
+# discloses psm=1 also publishes its reduction algorithm and parameters as a
+# SAIL fragment. Only that reduction is supplied by the hart, through the
+# builtin below. Every other part of the floating-point and microscaled
+# arithmetic is defined in this file.
+
+builtin function zvvm_fp_disclosed_reduce_group {
+  returns ZvvmFpx
+  arguments
+    U32 i,
+    U32 j,
+    U32 k_lo,
+    U32 k_hi,
+    ZvvmFpFmt fmt_a,
+    ZvvmFpFmt fmt_b,
+    ZvvmFpFmt fmt_c,
+    U32 g_len,
+    U32 w,
+    Bits<5> vs1,
+    Bits<5> vs2
+  description {
+    Reduce the group of products A[+i+, k] × B^T^[k, +j+], for k from +k_lo+ to
+    +k_hi+, with the disclosed psm=1 algorithm named by ZVVM_FP_PSM1_ALGORITHM
+    (specification `fp_disclosed_reduce_group`). The group has +g_len+
+    sub-dot-products of +w+ products each. A is read from +vs1+ and B from +vs2+,
+    with formats +fmt_a+ and +fmt_b+; +fmt_c+ is the C accumulator format.
+
+    The products are formed as `zvvm_fp_mul_exact` defines and are reduced in
+    increasing k order. The result is not rounded to +fmt_c+; the disclosed
+    rnd step does that. Flags raised by the reduction accrue in fflags.
+  }
+}
+
+# ─── Matrix multiply-accumulate ──────────────────────────────────────────
+
+function zvvm_fp_rounding_mode {
+  returns RoundingMode
+  arguments Bits<INSTR_ENC_SIZE> encoding
+  description {
+    Return the dynamic rounding mode in frm (specification
+    `get_fp_rounding_mode`). A reserved frm value (5, 6 or 7) raises an
+    illegal-instruction exception, as for other floating-point instructions
+    with a dynamic rounding mode.
+  }
+  body {
+    if (CSR[fcsr].FRM > 4) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    return $enum(RoundingMode, CSR[fcsr].FRM);
+  }
+}
+
+function zvvm_check_fp_gemm {
+  arguments
+    ZvvmFpFmt fmt_c,
+    U32 grouping,
+    U32 lambda,
+    Bits<INSTR_ENC_SIZE> encoding
+  description {
+    Raise an illegal-instruction exception unless the disclosed grouping
+    factor G (+grouping+) is a power of two between 1 and +lambda+, as the
+    specification helpers `fp_gemm` and `fp_scaled_gemm` require, or if the C
+    accumulator format +fmt_c+ is E4M3.
+
+    The specification does not define overflow of an E4M3 accumulator, which
+    has no infinity. The Sail model defines no rounding to E4M3: its
+    `ime_fp_round` covers only IEEE-style formats (`ime_fp.sail:219-268`), and
+    its OFP8-accumulator rows raise an illegal-instruction exception
+    (`ime_mx.sail:301-325`). This function does the same for E4M3.
+  }
+  body {
+    if ((grouping == 0) || (grouping > lambda) || ((grouping & (grouping - 1)) != 0)) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    if (fmt_c == ZvvmFpFmt::E4M3) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+  }
+}
+
+function zvvm_fp_accumulate_group {
+  returns Bits<64>
+  arguments
+    Bits<64> acc,
+    ZvvmGemmGeom g,
+    U32 i,
+    U32 j,
+    U32 step,
+    U32 g0,
+    U32 g_len,
+    ZvvmFpFmt fmt_a,
+    ZvvmFpFmt fmt_b,
+    ZvvmFpFmt fmt_c,
+    Boolean psm,
+    Bits<2> rnd,
+    RoundingMode rm,
+    Boolean scaled,
+    Bits<64> blk_scale,
+    Bits<5> vs1,
+    Bits<5> vs2
+  description {
+    Return the C element +acc+ after accumulating one group of +g_len+
+    sub-dot-products, starting at sub-dot-product +g0+ of LMUL=1 step +step+.
+    This is the group body of the specification helpers `fp_gemm` and
+    `fp_scaled_gemm`: `fp_group_sum`, then `round_group_sum`, then the
+    accumulation.
+
+    +psm+ and +rnd+ are the disclosed partial-sum mode and group rounding
+    (0 frm, 1 rto, 2 xct). When +scaled+ is true, the partial sum is scaled by
+    +blk_scale+, the combined block scale in format +fmt_c+.
+  }
+  body {
+    U32 k_lo = (step * g.lambda * g.w) + (g0 * g.w);
+    U32 k_hi = k_lo + (g_len * g.w) - 1;
+
+    ZvvmFpx s = zvvm_fp_internal_zero();
+    if (psm) {
+      s = zvvm_fp_disclosed_reduce_group(i, j, k_lo, k_hi, fmt_a, fmt_b, fmt_c, g_len, g.w, vs1, vs2);
+    } else if (zvvm_fp_long_sum?(fmt_a, fmt_b, g_len * g.w, rnd)) {
+      # Microscaled inputs are OFP8 or OFP4, so a long sum is never scaled.
+      assert(!scaled, "no long accumulator for microscaled inputs");
+      ZvvmFpxLong long_s = zvvm_fp_group_sum_long(g, i, j, k_lo, k_hi, fmt_a, fmt_b, rm, vs1, vs2);
+      if (rnd == 2) {
+        return zvvm_fp_add_internal_long(acc, long_s, fmt_c, rm);
+      }
+      s = zvvm_fpx_long_extract(long_s, fmt_c);
+    } else {
+      s = zvvm_fp_group_sum(g, i, j, k_lo, k_hi, fmt_a, fmt_b, rm, vs1, vs2);
+    }
+
+    if (rnd == 2) {
+      # xct: S is not rounded; C + S is the only rounding.
+      if (scaled) {
+        s = zvvm_fp_internal_scale(blk_scale, fmt_c, s);
+      }
+      return zvvm_fp_add_internal(acc, s, fmt_c, rm);
+    }
+    Bits<64> s_bits = (rnd == 1) ? zvvm_fp_round_to_rto(s, fmt_c) : zvvm_fp_round_to_frm(s, fmt_c, rm);
+    if (scaled) {
+      s_bits = zvvm_fp_mul(blk_scale, s_bits, fmt_c, rm);
+    }
+    return zvvm_fp_add(acc, s_bits, fmt_c, rm);
+  }
+}
+
+function zvvm_fp_gemm {
+  arguments
+    ZvvmGemmGeom g,
+    ZvvmFpFmt fmt_a,
+    ZvvmFpFmt fmt_b,
+    ZvvmFpFmt fmt_c,
+    RoundingMode rm,
+    Bits<5> vs1,
+    Bits<5> vs2,
+    Bits<5> vd,
+    Bits<INSTR_ENC_SIZE> encoding
+  description {
+    C += A × B^T^ on floating-point tiles (specification `fp_gemm`). A is read
+    from +vs1+ with format +fmt_a+, B from +vs2+ with format +fmt_b+, and C from
+    and to +vd+ with format +fmt_c+. Accumulation into C rounds with +rm+.
+    C tile tail columns (j >= N) are not written.
+
+    G, psm and rnd are the disclosed values for (SEW, W, lambda). Each LMUL=1
+    step holds lambda sub-dot-products, accumulated in groups of exactly G.
+  }
+  body {
+    U32 grouping = zvvm_fp_grouping(g.eew_c, g.w, CSR[vtype].LAMBDA);
+    Boolean psm = zvvm_fp_psm?(g.eew_c, g.w, CSR[vtype].LAMBDA);
+    Bits<2> rnd = zvvm_fp_rnd(g.eew_c, g.w, CSR[vtype].LAMBDA);
+    zvvm_check_fp_gemm(fmt_c, grouping, g.lambda, encoding);
+
+    for (U32 j = 0; j < g.n; j++) {
+      for (U32 i = 0; i < g.m; i++) {
+        U32 c_flat = zvvm_tile_reg_idx((i * g.n_max) + j, g.emul_c, g.lambda, g.epr_c);
+        Bits<64> acc = zvvm_read_elem(g.eew_c, c_flat, vd);
+        # LMUL > 1 repeats the LMUL = 1 computation in increasing register order.
+        for (U32 step = 0; step < g.lmul; step++) {
+          for (U32 g0 = 0; g0 < g.lambda; g0 = g0 + grouping) {
+            acc = zvvm_fp_accumulate_group(
+              acc, g, i, j, step, g0, grouping, fmt_a, fmt_b, fmt_c,
+              psm, rnd, rm, false, 0, vs1, vs2);
+          }
+        }
+        zvvm_write_elem(g.eew_c, c_flat, vd, acc);
+      }
+    }
+  }
+}
+
+function zvvm_read_block_scales {
+  returns Bits<64>
+  arguments
+    U32 i,
+    U32 j,
+    U32 s,
+    U32 r,
+    ZvvmFpFmt fmt_c,
+    RoundingMode rm
+  description {
+    Return the combined block scale scale_A × scale_B of block +s+ for row +i+
+    of A and column +j+ of B^T^, in format +fmt_c+ (specification
+    `read_block_scales` with vm=0).
+
+    v0 holds 16-bit scale pairs with row stride +r+. Element (m × +r+ + +s+)
+    holds the E8M0 scale of row m of A in bits [7:0] and that of column m of
+    B^T^ in bits [15:8]. Both scales are converted to +fmt_c+ with +rm+ and
+    multiplied in +fmt_c+ with +rm+. The conversions and the multiplication
+    can raise flags, and the product is NaN if either scale is 0xFF or if
+    zero is multiplied by infinity.
+
+    This follows the specification text. The Sail model instead scales by
+    the exact value 2^eA + eB - 254^ and raises no flags here.
+  }
+  body {
+    Bits<64> pair_a = zvvm_read_elem(16, (i * r) + s, 0);
+    Bits<64> pair_b = zvvm_read_elem(16, (j * r) + s, 0);
+    Bits<64> scale_a = zvvm_decode_scale(pair_a[7:0], fmt_c, rm);
+    Bits<64> scale_b = zvvm_decode_scale(pair_b[15:8], fmt_c, rm);
+    return zvvm_fp_mul(scale_a, scale_b, fmt_c, rm);
+  }
+}
+
+function zvvm_fp_scaled_gemm {
+  arguments
+    ZvvmGemmGeom g,
+    ZvvmFpFmt fmt_a,
+    ZvvmFpFmt fmt_b,
+    ZvvmFpFmt fmt_c,
+    RoundingMode rm,
+    Bits<5> vs1,
+    Bits<5> vs2,
+    Bits<5> vd,
+    Bits<INSTR_ENC_SIZE> encoding
+  description {
+    C += scale_A × scale_B × (A × B^T^) on microscaled floating-point tiles
+    (specification `fp_scaled_gemm`). The operands are those of `zvvm_fp_gemm`.
+    The E8M0 block scales are read from v0, and vtype.BS selects block size 32
+    (0) or 16 (1).
+
+    Groups do not cross an LMUL=1 step or a microscaling block, so the last
+    group of each block and step intersection can be shorter than G. A NaN
+    combined block scale sets the C element to the default NaN and ends its
+    evaluation: the products of that block and all later blocks are not
+    evaluated and raise no flags.
+  }
+  body {
+    U32 grouping = zvvm_fp_grouping(g.eew_c, g.w, CSR[vtype].LAMBDA);
+    Boolean psm = zvvm_fp_psm?(g.eew_c, g.w, CSR[vtype].LAMBDA);
+    Bits<2> rnd = zvvm_fp_rnd(g.eew_c, g.w, CSR[vtype].LAMBDA);
+    zvvm_check_fp_gemm(fmt_c, grouping, g.lambda, encoding);
+
+    U32 block_size = (CSR[vtype].BS == 1) ? 16 : 32;
+    U32 s_blocks = (g.k_eff + block_size - 1) / block_size;
+    U32 r = (g.lambda * g.eew_c) / 16;
+    U32 step_len = g.lambda * g.w;
+
+    for (U32 j = 0; j < g.n; j++) {
+      for (U32 i = 0; i < g.m; i++) {
+        U32 c_flat = zvvm_tile_reg_idx((i * g.n_max) + j, g.emul_c, g.lambda, g.epr_c);
+        Bits<64> acc = zvvm_read_elem(g.eew_c, c_flat, vd);
+        Boolean nan_out = false;
+
+        for (U32 s = 0; s < s_blocks; s++) {
+          if (!nan_out) {
+            Bits<64> blk_scale = zvvm_read_block_scales(i, j, s, r, fmt_c, rm);
+            if (zvvm_fp_is_nan?(blk_scale, fmt_c)) {
+              nan_out = true;
+            } else {
+              U32 blk_k_lo = s * block_size;
+              U32 blk_k_hi = (((blk_k_lo + block_size) < g.k_eff) ? (blk_k_lo + block_size) : g.k_eff) - 1;
+              for (U32 step = 0; step < g.lmul; step++) {
+                U32 step_k_lo = step * step_len;
+                U32 step_k_hi = step_k_lo + step_len - 1;
+                U32 int_k_lo = (step_k_lo > blk_k_lo) ? step_k_lo : blk_k_lo;
+                U32 int_k_hi = (step_k_hi < blk_k_hi) ? step_k_hi : blk_k_hi;
+                if (int_k_lo <= int_k_hi) {
+                  U32 subdot_lo = (int_k_lo - step_k_lo) / g.w;
+                  U32 subdot_hi = (int_k_hi - step_k_lo) / g.w;
+                  for (U32 g0 = subdot_lo; g0 <= subdot_hi; g0 = g0 + grouping) {
+                    U32 g_len = ((subdot_hi - g0 + 1) < grouping) ? (subdot_hi - g0 + 1) : grouping;
+                    acc = zvvm_fp_accumulate_group(
+                      acc, g, i, j, step, g0, g_len, fmt_a, fmt_b, fmt_c,
+                      psm, rnd, rm, true, blk_scale, vs1, vs2);
+                  }
+                }
+              }
+            }
+          }
+        }
+        zvvm_write_elem(g.eew_c, c_flat, vd, nan_out ? zvvm_fp_default_nan(fmt_c) : acc);
+      }
+    }
+  }
+}
+
+function zvvm_int_block_dot {
+  returns Bits<64>
+  arguments
+    ZvvmGemmGeom g,
+    U32 i,
+    U32 j,
+    U32 k_lo,
+    U32 k_hi,
+    Bits<5> vs1,
+    Bits<5> vs2
+  description {
+    Return the exact signed integer dot product of row +i+ of A and column +j+
+    of B^T^ over k from +k_lo+ to +k_hi+ (specification `int_block_dot` with
+    signed inputs). A block of at most 32 MXINT8 products is below 2^19^ in
+    magnitude, so the 64-bit two's-complement sum is exact.
+  }
+  body {
+    Bits<64> sum = 0;
+    for (U32 k = k_lo; k <= k_hi; k++) {
+      U32 a_flat = zvvm_tile_reg_idx((i * g.k_eff) + k, g.lmul, g.lambda * g.w, g.epr_a);
+      U32 b_flat = zvvm_tile_reg_idx((j * g.k_eff) + k, g.lmul, g.lambda * g.w, g.epr_a);
+      Bits<64> a = zvvm_extend(zvvm_read_elem(g.eew_a, a_flat, vs1), g.eew_a, true);
+      Bits<64> b = zvvm_extend(zvvm_read_elem(g.eew_a, b_flat, vs2), g.eew_a, true);
+      sum = sum + (a * b);
+    }
+    return sum;
+  }
+}
+
+function zvvm_int_scaled_gemm {
+  arguments
+    ZvvmGemmGeom g,
+    ZvvmFpFmt fmt_c,
+    RoundingMode rm,
+    Bits<5> vs1,
+    Bits<5> vs2,
+    Bits<5> vd
+  description {
+    C += scale_A × scale_B × (A × B^T^) with signed integer A and B tiles
+    (MXINT8 or MXINT4) and a floating-point C tile of format +fmt_c+
+    (specification `int_scaled_gemm`). A is read from +vs1+, B from +vs2+, and
+    C from and to +vd+. Block scales, block size and NaN termination are those
+    of `zvvm_fp_scaled_gemm`.
+
+    For each block, the exact dot product is converted to +fmt_c+, multiplied
+    by the combined block scale, and added to C, each step rounding with +rm+.
+    G, psm and rnd do not apply.
+  }
+  body {
+    U32 block_size = (CSR[vtype].BS == 1) ? 16 : 32;
+    U32 s_blocks = (g.k_eff + block_size - 1) / block_size;
+    U32 r = (g.lambda * g.eew_c) / 16;
+
+    for (U32 j = 0; j < g.n; j++) {
+      for (U32 i = 0; i < g.m; i++) {
+        U32 c_flat = zvvm_tile_reg_idx((i * g.n_max) + j, g.emul_c, g.lambda, g.epr_c);
+        Bits<64> acc = zvvm_read_elem(g.eew_c, c_flat, vd);
+        Boolean nan_out = false;
+
+        for (U32 s = 0; s < s_blocks; s++) {
+          if (!nan_out) {
+            Bits<64> blk_scale = zvvm_read_block_scales(i, j, s, r, fmt_c, rm);
+            if (zvvm_fp_is_nan?(blk_scale, fmt_c)) {
+              nan_out = true;
+            } else {
+              # The last block may hold fewer than block_size elements.
+              U32 k_lo = s * block_size;
+              U32 k_hi = (((k_lo + block_size) < g.k_eff) ? (k_lo + block_size) : g.k_eff) - 1;
+              Bits<64> dot = zvvm_int_block_dot(g, i, j, k_lo, k_hi, vs1, vs2);
+              Bits<64> fp_sum = zvvm_int_to_fp(dot, fmt_c, rm);
+              acc = zvvm_fp_add(acc, zvvm_fp_mul(blk_scale, fp_sum, fmt_c, rm), fmt_c, rm);
+            }
+          }
+        }
+        zvvm_write_elem(g.eew_c, c_flat, vd, nan_out ? zvvm_fp_default_nan(fmt_c) : acc);
+      }
+    }
+  }
+}
