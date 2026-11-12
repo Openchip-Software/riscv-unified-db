@@ -288,6 +288,19 @@ target_compile_definitions(test_softfloat_fp PRIVATE
   UDB_FP_DIRECTED_JSONL="${UDB_ROOT}/tests/data/fp/directed/f32_fpgen_expanded.jsonl"
 )
 
+# The Zvvm floating-point tests need the rv64-ime hart.
+if("rv64-ime" IN_LIST CONFIG_LIST)
+  add_executable(test_zvvm_fp
+    ${CMAKE_SOURCE_DIR}/test/test_zvvm_fp.cpp
+    ${CMAKE_SOURCE_DIR}/src/NotificationHandler.cpp
+  )
+  target_include_directories(test_zvvm_fp PUBLIC ${CMAKE_SOURCE_DIR}/include)
+  target_link_libraries(test_zvvm_fp PRIVATE hart Catch2::Catch2WithMain libsoftfloat_static)
+  target_compile_definitions(test_zvvm_fp PRIVATE
+    UDB_RV64_IME_CFG="${UDB_ROOT}/cfgs/rv64-ime.yaml"
+  )
+endif()
+
 add_executable(test_regfile
   ${CMAKE_SOURCE_DIR}/test/test_regfile.cpp
   ${CMAKE_SOURCE_DIR}/src/NotificationHandler.cpp
@@ -315,6 +328,9 @@ foreach (random_test IN LISTS RANDOM_TESTS)
 endforeach()
 
 catch_discover_tests(test_softfloat_fp)
+if(TARGET test_zvvm_fp)
+  catch_discover_tests(test_zvvm_fp)
+endif()
 
 # catch_discover_tests(test_version)
 # catch_discover_tests(test_csr)

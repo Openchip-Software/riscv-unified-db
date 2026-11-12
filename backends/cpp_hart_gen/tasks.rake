@@ -425,7 +425,7 @@ end
 
 namespace :test do
   task cpp_hart: "gen:cpp_hart" do
-    _, build_name = configs_build_name
+    configs_name, build_name = configs_build_name
 
     Rake::Task["#{CPP_HART_GEN_DST}/#{build_name}/build/Makefile"].invoke
     Rake::Task[(CPP_HART_GEN_SRC / "cpp" / "test" / "test_bits_random_0.cpp").to_s].invoke
@@ -436,6 +436,8 @@ namespace :test do
       sh "make -j #{$jobs} test_softfloat_fp"
       sh "make -j #{$jobs} test_regfile"
       sh "make -j #{$jobs} test_util"
+      # the Zvvm floating-point tests use the rv64-ime hart
+      sh "make -j #{$jobs} test_zvvm_fp" if configs_name.include?("rv64-ime")
       sh "ctest -T coverage -T test"
     end
   end
