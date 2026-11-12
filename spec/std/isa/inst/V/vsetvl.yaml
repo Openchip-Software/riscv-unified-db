@@ -36,6 +36,7 @@ operation(): |
       || ((new_vtype & 8'd0) != 0)    # reserved bits
       || (new_vtype[5] == 1)          # reserved vsew encoding
       || (new_vtype[2:0] == 3'b100)   # reserved vlmul encoding
+      || vtype_altfmt_reserved?(new_vtype) # ALTFMT with SEW >= 32
       || (xlen() == 32 && new_vtype[2:0] == 3'b101)) # reserved LMUL in RV32
   {
     CSR[vtype].VILL = 1;
@@ -43,6 +44,7 @@ operation(): |
     CSR[vtype].VTA = 0;
     CSR[vtype].VSEW = 0;
     CSR[vtype].VLMUL = 0;
+    write_vtype_altfmt(0);
     zvvm_clear_vtype();
     CSR[vl].VALUE = 0;
   } else {
@@ -52,6 +54,7 @@ operation(): |
     CSR[vtype].VTA = new_vtype[6];
     CSR[vtype].VSEW = new_vtype[5:3];
     CSR[vtype].VLMUL = new_vtype[2:0];
+    write_vtype_altfmt(new_vtype[8]);
     zvvm_write_vtype(new_vtype);
 
     VectorState state = vector_state();
@@ -75,6 +78,7 @@ operation(): |
         CSR[vtype].VTA = 0;
         CSR[vtype].VSEW = 0;
         CSR[vtype].VLMUL = 0;
+        write_vtype_altfmt(0);
         zvvm_clear_vtype();
         CSR[vl].VALUE = 0;
       }
