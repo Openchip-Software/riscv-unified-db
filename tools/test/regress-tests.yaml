@@ -227,6 +227,16 @@ tests:
       - name: Run cpp unit tests
         run: ./do test:cpp_hart CONFIG=rv64 BUILD_NAME=rv64-unit JOBS=4 BUILD_TYPE=debug
 
+  regress-zvvm-fp:
+    ci_stage: pr
+    toolchain_container: true
+    gh_pre:
+      - name: check out riscv-tests
+        run: git submodule update --init ext/riscv-tests
+    test:
+      - name: Run the Zvvm floating-point instruction tests with VLEN 256 and grouped sums
+        run: ./do test:zvvm_fp CONFIG=rv64-ime-v256-grp JOBS=4
+
   regress-riscv-tests-32:
     ci_stage: pr
     toolchain_container: true
