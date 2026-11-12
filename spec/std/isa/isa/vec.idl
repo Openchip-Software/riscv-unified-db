@@ -52,3 +52,39 @@ function vector_state {
     return state;
   }
 }
+
+function vtype_altfmt_implemented? {
+  returns Boolean
+  description {
+    Return true if vtype has the ALTFMT field (bit 8), which Zvfbfa and Zvvfmm define.
+  }
+  body {
+    return implemented?(ExtensionName::Zvfbfa) || implemented?(ExtensionName::Zvvfmm);
+  }
+}
+
+function vtype_altfmt_reserved? {
+  returns Boolean
+  arguments
+    XReg new_vtype
+  description {
+    Return true if +new_vtype+, a value written by a vset* instruction, sets
+    ALTFMT together with SEW >= 32, a reserved combination.
+  }
+  body {
+    return vtype_altfmt_implemented?() && (new_vtype[8] == 1) && (new_vtype[5:3] >= 2);
+  }
+}
+
+function write_vtype_altfmt {
+  arguments
+    Bits<1> altfmt
+  description {
+    Write +altfmt+ to vtype.ALTFMT when the field exists.
+  }
+  body {
+    if (vtype_altfmt_implemented?()) {
+      CSR[vtype].ALTFMT = altfmt;
+    }
+  }
+}
