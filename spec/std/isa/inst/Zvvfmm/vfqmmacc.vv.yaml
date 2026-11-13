@@ -42,6 +42,7 @@ description: |
   _Illegal Instruction_ is raised if any of the following conditions hold:
 
   * `vstart` ≠ 0.
+  * `frm` holds a reserved rounding mode (5, 6 or 7).
   * `SEW = 8` (`EEW = SEW ÷ 4 = 2` is reserved).
   * VL is not a multiple of LAMBDA × LMUL.
   * EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
@@ -89,16 +90,12 @@ operation(): |
     raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
   }
   zvvm_check_gemm_reg_groups(g, vs1, vs2, vd, $encoding);
+  ZvvmFpFmt fmt_a = zvvm_fp_format_of(g.eew_a, CSR[vtype].ALTFMTA);
+  ZvvmFpFmt fmt_b = zvvm_fp_format_of(g.eew_a, CSR[vtype].ALTFMTB);
+  ZvvmFpFmt fmt_c = zvvm_fp_format_of(g.eew_c, CSR[vtype].ALTFMT);
+  RoundingMode rm = zvvm_fp_rounding_mode($encoding);
   if (vm == 0) {
-    zvvm_fp_scaled_gemm(
-      g.w, g.lambda, g.lmul, vs1, vs2, vd,
-      zvvm_fp_grouping(g.eew_c, g.w, CSR[vtype].LAMBDA),
-      zvvm_fp_psm?(g.eew_c, g.w, CSR[vtype].LAMBDA),
-      zvvm_fp_rnd(g.eew_c, g.w, CSR[vtype].LAMBDA));
+    zvvm_fp_scaled_gemm(g, fmt_a, fmt_b, fmt_c, rm, vs1, vs2, vd, $encoding);
   } else {
-    zvvm_fp_gemm(
-      g.w, g.lambda, g.lmul, vs1, vs2, vd,
-      zvvm_fp_grouping(g.eew_c, g.w, CSR[vtype].LAMBDA),
-      zvvm_fp_psm?(g.eew_c, g.w, CSR[vtype].LAMBDA),
-      zvvm_fp_rnd(g.eew_c, g.w, CSR[vtype].LAMBDA));
+    zvvm_fp_gemm(g, fmt_a, fmt_b, fmt_c, rm, vs1, vs2, vd, $encoding);
   }

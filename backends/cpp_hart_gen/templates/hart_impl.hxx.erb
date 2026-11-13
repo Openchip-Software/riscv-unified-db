@@ -30,6 +30,9 @@ namespace udb {
     for (unsigned i = 0; i < <%= rf.registers.count %>; i++) {
       <%- if is_rt_width -%>
       fmt::print(out, "<%= rf_name %>{}: {:#x}\n", i, static_cast<uint64_t>(_<%= rf_name %>reg(i).get().get_ui()));
+      <%- elsif rf_width > 128 -%>
+      <%# stored in GMP, which fmt cannot format -%>
+      fmt::print(out, "<%= rf_name %>{}: 0x{}\n", i, _<%= rf_name %>reg(i).get().get_str(16));
       <%- else -%>
       fmt::print(out, "<%= rf_name %>{}: {:#x}\n", i, _<%= rf_name %>reg(i).get());
       <%- end -%>
@@ -85,11 +88,9 @@ namespace udb {
       this->Notify(FETCH_EVENT, (void*)&enc);
       m_cur_inst = reinterpret_cast<InstBase*>(m_run_one_inst_storage.data());
       if (_decode(m_pc, enc, m_cur_inst) == false) {
-        try {
-          raise(ExceptionCode{ExceptionCode::IllegalInstruction}, mode(), m_params.REPORT_ENCODING_IN_MTVAL_ON_ILLEGAL_INSTRUCTION.value() ? enc : decltype(enc){0});
-        } catch (const AbortInstruction& e) {
-          return StopReason::Exception;
-        }
+        // raise() sets the next PC to the trap vector and throws
+        // AbortInstruction; the handler below moves the PC there.
+        raise(ExceptionCode{ExceptionCode::IllegalInstruction}, mode(), m_params.REPORT_ENCODING_IN_MTVAL_ON_ILLEGAL_INSTRUCTION.value() ? enc : decltype(enc){0});
       }
       this->Notify(DECODE_EVENT, (void*)m_cur_inst);
 
@@ -170,11 +171,10 @@ namespace udb {
 
           m_cur_inst = current_bb->alloc_inst();
           if (_decode(m_pc, enc, m_cur_inst) == false) {
-            try {
-              raise(ExceptionCode{ExceptionCode::IllegalInstruction}, mode(), m_params.REPORT_ENCODING_IN_MTVAL_ON_ILLEGAL_INSTRUCTION.value() ? enc : decltype(enc){0});
-            } catch (const AbortInstruction& e) {
-              return StopReason::Exception;
-            }
+            // raise() sets the next PC to the trap vector and throws
+            // AbortInstruction; the handler below drops this basic block,
+            // which holds the undecoded instruction, and moves the PC there.
+            raise(ExceptionCode{ExceptionCode::IllegalInstruction}, mode(), m_params.REPORT_ENCODING_IN_MTVAL_ON_ILLEGAL_INSTRUCTION.value() ? enc : decltype(enc){0});
           }
           this->Notify(DECODE_EVENT, (void*)m_cur_inst);
 

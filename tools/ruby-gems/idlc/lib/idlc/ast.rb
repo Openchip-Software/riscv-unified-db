@@ -2846,7 +2846,6 @@ module Idl
 
     def initialize(input, interval, lhs_ast, rhs_ast)
       super(input, interval, [lhs_ast, rhs_ast])
-      @vars = {}
     end
 
     # @!macro type_check
@@ -2865,13 +2864,11 @@ module Idl
       end
     end
 
+    # Look the variable up in +symtab+ on every call. Global clones of a symbol
+    # table share one name, so a cache keyed on the name would return the
+    # variable of an earlier compile-time evaluation of the same function.
     def var(symtab)
-      variable = @vars[symtab.name]
-      if variable.nil?
-        variable = symtab.get(lhs.text_value)
-        @vars[symtab.name] = variable
-      end
-      variable
+      symtab.get(lhs.text_value)
     end
 
     # @!macro execute

@@ -43059,6 +43059,7 @@ Only SEW ∈ {32, 64} is valid; SEW ∈ {8, 16} is _reserved_.
 _Illegal Instruction_ is raised if any of the following conditions hold:
 
 * xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* xref:csrs:frm.adoc#udb:doc:csr:frm[frm] holds a reserved rounding mode (5, 6 or 7).
 * SEW < 32 (reserved encoding).
 * `altfmt_A` = 1 (reserved; MXINT inputs are signed).
 * `altfmt_B` = 1 (reserved; MXINT inputs are signed).
@@ -43155,6 +43156,7 @@ Only SEW ∈ {32, 64} is valid (giving EEW = 4 or 8); SEW ∈ {8, 16} is _reserv
 _Illegal Instruction_ is raised if any of the following conditions hold:
 
 * xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* xref:csrs:frm.adoc#udb:doc:csr:frm[frm] holds a reserved rounding mode (5, 6 or 7).
 * SEW < 32 (EEW = SEW÷8 would be sub-nibble).
 * VL is not a multiple of LAMBDA × LMUL.
 * EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
@@ -44496,6 +44498,7 @@ multiply-accumulate; `vm=0` is _reserved_.
 _Illegal Instruction_ is raised if any of the following conditions hold:
 
 * xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* xref:csrs:frm.adoc#udb:doc:csr:frm[frm] holds a reserved rounding mode (5, 6 or 7).
 * `vm` = 0 (_reserved_).
 * VL is not a multiple of LAMBDA × LMUL.
 * EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
@@ -44503,6 +44506,7 @@ _Illegal Instruction_ is raised if any of the following conditions hold:
 * `vd` is not aligned for EMUL_C.
 * The `vd` register group overlaps the `vs1` or `vs2` register group.
 * The selected row in the floating-point encoding map is marked `_reserved_`, or any extension named by that row is not implemented.
+* The C format is E4M3. The specification does not define overflow of an E4M3 accumulator, which has no infinity.
 
 
 Decode Variables::
@@ -46106,6 +46110,7 @@ The encodings SEW=8 (EEW=2), altfmt=1 with SEW=32, and SEW=64 are _reserved_.
 _Illegal Instruction_ is raised if any of the following conditions hold:
 
 * xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* xref:csrs:frm.adoc#udb:doc:csr:frm[frm] holds a reserved rounding mode (5, 6 or 7).
 * SEW = 8 (reserved encoding).
 * SEW = 32 and `altfmt` = 1 (reserved).
 * SEW = 64 (reserved encoding).
@@ -46205,6 +46210,7 @@ Only `SEW ∈ {16, 32, 64}` is valid, giving
 _Illegal Instruction_ is raised if any of the following conditions hold:
 
 * xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* xref:csrs:frm.adoc#udb:doc:csr:frm[frm] holds a reserved rounding mode (5, 6 or 7).
 * `SEW = 8` (`EEW = SEW ÷ 4 = 2` is reserved).
 * VL is not a multiple of LAMBDA × LMUL.
 * EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
@@ -47925,6 +47931,7 @@ The encodings SEW=8 (EEW=4, Int4 inputs into OFP8 accumulator), SEW=32, and SEW=
 _Illegal Instruction_ is raised if any of the following conditions hold:
 
 * xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* xref:csrs:frm.adoc#udb:doc:csr:frm[frm] holds a reserved rounding mode (5, 6 or 7).
 * SEW = 8 (reserved encoding).
 * SEW = 32 (reserved encoding).
 * SEW = 64 (reserved encoding).
@@ -48233,6 +48240,7 @@ selects the block size (32 or 16 elements).
 _Illegal Instruction_ is raised if any of the following conditions hold:
 
 * xref:csrs:vstart.adoc#udb:doc:csr:vstart[vstart] ≠ 0.
+* xref:csrs:frm.adoc#udb:doc:csr:frm[frm] holds a reserved rounding mode (5, 6 or 7).
 * VL is not a multiple of LAMBDA × LMUL.
 * EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
 * `vs1` or `vs2` is not aligned for LMUL.
@@ -48243,6 +48251,7 @@ _Illegal Instruction_ is raised if any of the following conditions hold:
 * When `vm=0` and `bs=1`: W × LMUL > SEW.
 * When `vm=0`: `vd`, `vs1`, or `vs2` overlaps `v0`.
 * When `vm=1`: the selected row in the floating-point encoding map is marked `_reserved_`, or any extension named by that row is not implemented.
+* The C format is E4M3. The specification does not define overflow of an E4M3 accumulator, which has no infinity.
 
 
 Decode Variables::

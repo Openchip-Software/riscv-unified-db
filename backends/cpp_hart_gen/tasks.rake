@@ -425,7 +425,7 @@ end
 
 namespace :test do
   task cpp_hart: "gen:cpp_hart" do
-    _, build_name = configs_build_name
+    configs_name, build_name = configs_build_name
 
     Rake::Task["#{CPP_HART_GEN_DST}/#{build_name}/build/Makefile"].invoke
     Rake::Task[(CPP_HART_GEN_SRC / "cpp" / "test" / "test_bits_random_0.cpp").to_s].invoke
@@ -436,6 +436,8 @@ namespace :test do
       sh "make -j #{$jobs} test_softfloat_fp"
       sh "make -j #{$jobs} test_regfile"
       sh "make -j #{$jobs} test_util"
+      # the Zvvm floating-point tests use the rv64-ime hart
+      sh "make -j #{$jobs} test_zvvm_fp" if configs_name.include?("rv64-ime")
       sh "ctest -T coverage -T test"
     end
   end
@@ -551,6 +553,53 @@ namespace :test do
     base = YAML.load_file("#{$root}/cfgs/#{configs_name[0]}.yaml")["params"]["MXLEN"]
     uvTests.each do |t|
       sh "#{CPP_HART_GEN_DST}/#{build_name}/build/iss -m #{configs_name[0]} -c #{$root}/cfgs/#{configs_name[0]}.yaml tests/isa/rv#{base}uv-p-#{t}"
+    end
+  end
+
+  desc <<~DESC
+    Run the self-checking Zvvm floating-point instruction tests on the ISS for CONFIG.
+
+    backends/cpp_hart_gen/test/zvvm/gen_tests.py writes one riscv-tests program per
+    configuration, with expected results from an independent reference
+    (zvvm_ref.py). Configurations with a suite: rv64-ime, rv64-ime-v256,
+    rv64-ime-v256-grp, rv64-ime-v1024-grp.
+
+    The programs are built with the first of RISCV_GCC, riscv64-unknown-elf-gcc,
+    riscv64-linux-gnu-gcc and bin/riscv64-unknown-elf-gcc that accepts -march=rv64gcv.
+    The task is skipped when none does.
+  DESC
+  task zvvm_fp: ["checkout_riscv_tests", "build:iss"] do
+    configs_name, build_name = configs_build_name
+    config = configs_name[0]
+    out_dir = "#{$resolver.gen_path}/zvvm_fp_tests"
+
+    candidates = [ENV["RISCV_GCC"], "riscv64-unknown-elf-gcc", "riscv64-linux-gnu-gcc",
+                  "#{$root}/bin/riscv64-unknown-elf-gcc"].compact
+    gcc = candidates.find do |cc|
+      system("#{cc} -march=rv64gcv -mabi=lp64d -c -x assembler /dev/null -o /dev/null < /dev/null > /dev/null 2>&1")
+    end
+    if gcc.nil?
+      warn "test:zvvm_fp skipped: no RISC-V cross-compiler that accepts -march=rv64gcv (set RISCV_GCC)"
+      next
+    end
+
+    sh "python3 #{CPP_HART_GEN_SRC}/test/zvvm/gen_tests.py #{out_dir}"
+    srcs = ["zvvm_fp_#{config}.S", "zvvm_fp_illegal_#{config}.S"].map { |f| "#{out_dir}/#{f}" }.select { |f| File.exist?(f) }
+    raise "No Zvvm floating-point test suite for configuration '#{config}'" if srcs.empty?
+
+    env_dir = "#{$root}/ext/riscv-tests/env/p"
+    srcs.each do |src|
+      elf = src.delete_suffix(".S")
+      sh "#{gcc} -march=rv64gcv -mabi=lp64d -static -mcmodel=medany -fvisibility=hidden -nostdlib -nostartfiles " \
+         "-I#{env_dir} -I#{$root}/ext/riscv-tests/isa/macros/scalar -T#{env_dir}/link.ld #{src} -o #{elf}"
+      out = `#{CPP_HART_GEN_DST}/#{build_name}/build/iss -m #{config} -c #{$root}/cfgs/#{config}.yaml #{elf} 2>&1`
+      unless $?.success? && out.include?("SUCCESS")
+        # The failing test number is case * 10^7 + byte offset * 256 + byte value for a wrong
+        # C byte, and case * 10^7 + 9 * 10^6 + fflags for wrong flags.
+        reason = out[/FAIL - Test #\d+/] || out.lines.last(2).join
+        raise "#{File.basename(elf)} failed on the #{config} ISS: #{reason}"
+      end
+      puts "PASSED: #{File.basename(elf)}"
     end
   end
 

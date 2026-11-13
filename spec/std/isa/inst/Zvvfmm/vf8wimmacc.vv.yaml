@@ -38,6 +38,7 @@ description: |
   _Illegal Instruction_ is raised if any of the following conditions hold:
 
   * `vstart` ≠ 0.
+  * `frm` holds a reserved rounding mode (5, 6 or 7).
   * SEW < 32 (reserved encoding).
   * `altfmt_A` = 1 (reserved; MXINT inputs are signed).
   * `altfmt_B` = 1 (reserved; MXINT inputs are signed).
@@ -80,4 +81,6 @@ operation(): |
     raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
   }
   zvvm_check_gemm_reg_groups(g, vs1, vs2, vd, $encoding);
-  zvvm_int_scaled_gemm(g.w, g.lambda, g.lmul, vs1, vs2, vd);
+  ZvvmFpFmt fmt_c = zvvm_fp_format_of(g.eew_c, CSR[vtype].ALTFMT);
+  RoundingMode rm = zvvm_fp_rounding_mode($encoding);
+  zvvm_int_scaled_gemm(g, fmt_c, rm, vs1, vs2, vd);
