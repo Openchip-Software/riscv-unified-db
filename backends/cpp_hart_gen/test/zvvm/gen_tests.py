@@ -861,8 +861,87 @@ def nan_scale_cases(cfg, lams):
     return out
 
 
+def exact_scale_cases(cfg, lams):
+    """Block 0 cases whose result depends on applying the combined E8M0 exponent
+    exactly before the single rounding (IME specification commit 324c62b7).
+    Rounding the scales or their product to FP16 first gives a different result.
+
+    - E5M2 x E5M2 -> FP16: 2^5 x 2^5 = 2^10, scales 2^-15 and 2^-15. The scaled
+      sum 2^-20 is a binary16 subnormal; 2^-30 rounded to FP16 is 0.
+    - E5M2 x E5M2 -> FP16: +1 and -1 in two groups, scales 2^127 and 2^0. Under
+      round-up the scaled sums round to +inf and -MAX, whose sum is +inf; a
+      scale rounded to +inf first would give +inf + -inf = NaN.
+    - MXINT8 -> FP16: block dot product 2049, scales 2^-18 and 2^-18. 2049 x 2^-36
+      rounds once, to the smallest subnormal under round-to-nearest-even;
+      rounding 2049 to FP16 first gives 2048, and 2048 x 2^-36 ties to 0."""
+    out = []
+    e5 = "E5M2"
+    p32 = R.pack(e5, 0, 15 + 5, 0)
+    for geom in geoms(cfg, lams, 16, 2, mx=True, bs=0):
+        lam, lmul, G, _ = geom
+        if lam * 2 * lmul < 17:
+            continue
+        # k index of the first element of the second group of block 0
+        k2 = G * 2 if G < lam else (lam * 2 if lmul > 1 else None)
+        fp_cases = [
+            ("2^10 x 2^-15 x 2^-15 = 2^-20", {0: p32}, {0: p32}, (112, 112)),
+        ]
+        if k2 is not None and k2 < 32:
+            fp_cases.append(
+                (
+                    "+1 and -1 in two groups x 2^127",
+                    {0: one(e5), k2: one(e5)},
+                    {0: one(e5), k2: neg(e5, one(e5))},
+                    (254, 127),
+                )
+            )
+        for title, a, b, sc in fp_cases:
+            for frm in range(5):
+                out.append(
+                    directed(
+                        cfg,
+                        "vfwmmacc",
+                        0,
+                        16,
+                        geom,
+                        1,
+                        1,
+                        0,
+                        frm,
+                        f"exact scale: {title}",
+                        pattern(a, b, 0, 8, scale=lambda mm, s, sc=sc: sc),
+                    )
+                )
+        a = {k: 127 for k in range(16)}
+        a[16] = 17
+        b = {k: 1 for k in range(17)}
+        for frm in range(5):
+            out.append(
+                directed(
+                    cfg,
+                    "vfwimmacc",
+                    0,
+                    16,
+                    geom,
+                    0,
+                    0,
+                    0,
+                    frm,
+                    "exact scale: 2049 x 2^-36",
+                    pattern(a, b, 0, 8, scale=lambda mm, s: (109, 109)),
+                )
+            )
+        break
+    return out
+
+
 def directed_cases(cfg, lams):
-    return zero_sum_cases(cfg, lams) + special_value_cases(cfg, lams) + nan_scale_cases(cfg, lams)
+    return (
+        zero_sum_cases(cfg, lams)
+        + special_value_cases(cfg, lams)
+        + nan_scale_cases(cfg, lams)
+        + exact_scale_cases(cfg, lams)
+    )
 
 
 def coverage(name, cases, cov):
@@ -905,6 +984,7 @@ def main():
             + zero_sum_cases(grp, lgrp)
             + special_value_cases(grp, lgrp)
             + nan_scale_cases(grp, lgrp)
+            + exact_scale_cases(grp, lgrp)
         ),
     )
     c256, l256 = load_cfg("rv64-ime-v256")
@@ -919,6 +999,7 @@ def main():
             + zero_sum_cases(c1k, l1k)
             + special_value_cases(c1k, l1k)
             + nan_scale_cases(c1k, l1k)
+            + exact_scale_cases(c1k, l1k)
         ),
     )
     with open(os.path.join(out_dir, "coverage.txt"), "w") as fh:

@@ -5,7 +5,8 @@
 
 # Floating-point and microscaled (MX) arithmetic of the Zvvm (Integrated Matrix)
 # multiply-accumulate instructions.
-# Source: https://github.com/riscv/integrated-matrix-extension (tag v0.9.0-on-main)
+# Source: https://github.com/riscv/integrated-matrix-extension (commit 324c62b7:
+# tag v0.9.0-on-main and "Apply E8M0 block scales exactly")
 #
 # The functions below follow the shared pseudocode of the specification. Each
 # function names the specification helper it implements. The specification
@@ -165,9 +166,9 @@ enum ZvvmFpxKind {
 # Exact internal value (specification fp_internal).
 # A finite value is (-1)^sign x mant x 2^exp, with exp read as a signed number.
 # A zero has mant = 0 and exp = 0, and its sign is significant.
-# 128 bits hold any single product (at most 106 bits), every exact group sum of
-# FP16, OFP8 or OFP4 products (at most 87 bits) and every microscaled group sum
-# multiplied by its block scale (at most 122 bits).
+# 128 bits hold any single product (at most 106 bits) and every exact group sum
+# of FP16, OFP8 or OFP4 products (at most 87 bits). A block scale only changes
+# exp, so a scaled group sum needs no more significand bits.
 struct ZvvmFpx {
   ZvvmFpxKind kind;
   Bits<1> sign;
@@ -357,20 +358,6 @@ function zvvm_fp_operand {
   }
 }
 
-function zvvm_fp_is_nan? {
-  returns Boolean
-  arguments
-    Bits<64> value,
-    ZvvmFpFmt f
-  description {
-    Return true if the encoding +value+ of format +f+ is a NaN
-    (specification `fp_is_NaN`).
-  }
-  body {
-    return zvvm_fp_decode(f, value).kind == ZvvmFpxKind::NaN;
-  }
-}
-
 function zvvm_fpx_mul {
   returns ZvvmFpx
   arguments
@@ -512,16 +499,19 @@ function zvvm_fp_internal_add {
 function zvvm_fp_internal_scale {
   returns ZvvmFpx
   arguments
-    Bits<64> scale,
-    ZvvmFpFmt f,
+    Bits<32> scale_exp,
     ZvvmFpx s
   description {
-    Return the exact product of the internal value +s+ and the block scale
-    +scale+ of format +f+ (specification `fp_internal_scale`). An infinite
-    scale times a zero +s+ raises the invalid-operation flag and returns a NaN.
+    Return the internal value +s+ × 2^+scale_exp+^, exactly
+    (specification `fp_internal_scale`). +scale_exp+ is a signed combined E8M0
+    exponent. Zeros, infinities and NaNs are returned unchanged. Raises no
+    exception flags; the next rounding detects overflow and underflow.
   }
   body {
-    return zvvm_fpx_mul(zvvm_fp_operand(f, scale), s);
+    if (s.kind != ZvvmFpxKind::Finite) {
+      return s;
+    }
+    return zvvm_fpx_finite(s.sign, s.mant, s.exp + scale_exp);
   }
 }
 
@@ -701,22 +691,6 @@ function zvvm_fp_add {
   }
 }
 
-function zvvm_fp_mul {
-  returns Bits<64>
-  arguments
-    Bits<64> a,
-    Bits<64> b,
-    ZvvmFpFmt f,
-    RoundingMode rm
-  description {
-    Return +a+ × +b+, both of format +f+, rounded with +rm+
-    (specification `fp_mul`).
-  }
-  body {
-    return zvvm_fpx_round(zvvm_fpx_mul(zvvm_fp_operand(f, a), zvvm_fp_operand(f, b)), f, rm, false);
-  }
-}
-
 function zvvm_fp_add_internal {
   returns Bits<64>
   arguments
@@ -734,41 +708,41 @@ function zvvm_fp_add_internal {
   }
 }
 
-function zvvm_decode_scale {
-  returns Bits<64>
+function zvvm_combine_scale_exponents {
+  returns Bits<32>, Boolean
   arguments
-    Bits<8> scale,
-    ZvvmFpFmt f,
-    RoundingMode rm
+    Bits<8> scale_a,
+    Bits<8> scale_b
   description {
-    Convert the E8M0 block scale +scale+ to format +f+ with rounding mode +rm+
-    (specification `decode_scale`). 0xFF is NaN and gives the default NaN.
-    Any other value is 2^+scale+ - 127^, rounded to +f+; the conversion can
-    overflow or underflow and raises the flags of that rounding.
+    Combine the E8M0 block scales +scale_a+ and +scale_b+ (specification
+    `combine_scale_exponents`). Return the sum of their unbiased exponents,
+    +scale_a+ + +scale_b+ - 254, as a signed number, and false. If either
+    scale is 0xFF, the NaN encoding, return 0 and true. Neither scale is
+    converted to a floating-point format, and no exception flags are raised.
   }
   body {
-    if (scale == 8'hff) {
-      return zvvm_fp_default_nan(f);
+    if ((scale_a == 8'hff) || (scale_b == 8'hff)) {
+      return 0, true;
     }
-    Bits<32> e = scale;
-    return zvvm_fpx_round(zvvm_fpx_finite(0, 1, $signed(e) - 32'sd127), f, rm, false);
+    Bits<32> e_a = scale_a;
+    Bits<32> e_b = scale_b;
+    return e_a + e_b - 254, false;
   }
 }
 
-function zvvm_int_to_fp {
-  returns Bits<64>
+function zvvm_fp_internal_from_int {
+  returns ZvvmFpx
   arguments
-    Bits<64> value,
-    ZvvmFpFmt f,
-    RoundingMode rm
+    Bits<64> value
   description {
-    Convert the signed integer +value+ to format +f+ with rounding mode +rm+
-    (specification `int_to_fp`). Zero converts to +0.
+    Return the signed integer +value+ as an exact internal value
+    (specification `fp_internal_from_int`). Zero gives +0. Raises no
+    exception flags.
   }
   body {
     Bits<1> sign = value[63];
     Bits<64> mag = (sign == 1) ? -value : value;
-    return zvvm_fpx_round(zvvm_fpx_finite(sign, mag, 0), f, rm, false);
+    return zvvm_fpx_finite(sign, mag, 0);
   }
 }
 
@@ -1133,19 +1107,19 @@ function zvvm_fp_accumulate_group {
     Bits<2> rnd,
     RoundingMode rm,
     Boolean scaled,
-    Bits<64> blk_scale,
+    Bits<32> scale_exp,
     Bits<5> vs1,
     Bits<5> vs2
   description {
     Return the C element +acc+ after accumulating one group of +g_len+
     sub-dot-products, starting at sub-dot-product +g0+ of LMUL=1 step +step+.
     This is the group body of the specification helpers `fp_gemm` and
-    `fp_scaled_gemm`: `fp_group_sum`, then `round_group_sum`, then the
-    accumulation.
+    `fp_scaled_gemm`: `fp_group_sum`, then `fp_internal_scale` for a
+    microscaled group, then `round_group_sum`, then the accumulation.
 
     +psm+ and +rnd+ are the disclosed partial-sum mode and group rounding
-    (0 frm, 1 rto, 2 xct). When +scaled+ is true, the partial sum is scaled by
-    +blk_scale+, the combined block scale in format +fmt_c+.
+    (0 frm, 1 rto, 2 xct). When +scaled+ is true, the internal partial sum is
+    multiplied exactly by 2^+scale_exp+^ before the +rnd+ treatment.
   }
   body {
     U32 k_lo = (step * g.lambda * g.w) + (g0 * g.w);
@@ -1166,17 +1140,14 @@ function zvvm_fp_accumulate_group {
       s = zvvm_fp_group_sum(g, i, j, k_lo, k_hi, fmt_a, fmt_b, rm, vs1, vs2);
     }
 
+    if (scaled) {
+      s = zvvm_fp_internal_scale(scale_exp, s);
+    }
     if (rnd == 2) {
       # xct: S is not rounded; C + S is the only rounding.
-      if (scaled) {
-        s = zvvm_fp_internal_scale(blk_scale, fmt_c, s);
-      }
       return zvvm_fp_add_internal(acc, s, fmt_c, rm);
     }
     Bits<64> s_bits = (rnd == 1) ? zvvm_fp_round_to_rto(s, fmt_c) : zvvm_fp_round_to_frm(s, fmt_c, rm);
-    if (scaled) {
-      s_bits = zvvm_fp_mul(blk_scale, s_bits, fmt_c, rm);
-    }
     return zvvm_fp_add(acc, s_bits, fmt_c, rm);
   }
 }
@@ -1226,35 +1197,29 @@ function zvvm_fp_gemm {
 }
 
 function zvvm_read_block_scales {
-  returns Bits<64>
+  returns Bits<32>, Boolean
   arguments
     U32 i,
     U32 j,
     U32 s,
-    U32 r,
-    ZvvmFpFmt fmt_c,
-    RoundingMode rm
+    U32 r
   description {
-    Return the combined block scale scale_A × scale_B of block +s+ for row +i+
-    of A and column +j+ of B^T^, in format +fmt_c+ (specification
-    `read_block_scales` with vm=0).
+    Return the combined E8M0 exponent of block +s+ for row +i+ of A and
+    column +j+ of B^T^, and whether either scale is NaN (specification
+    `read_block_scales` with vm=0). The result is that of
+    `zvvm_combine_scale_exponents`.
 
     v0 holds 16-bit scale pairs with row stride +r+. Element (m × +r+ + +s+)
     holds the E8M0 scale of row m of A in bits [7:0] and that of column m of
-    B^T^ in bits [15:8]. Both scales are converted to +fmt_c+ with +rm+ and
-    multiplied in +fmt_c+ with +rm+. The conversions and the multiplication
-    can raise flags, and the product is NaN if either scale is 0xFF or if
-    zero is multiplied by infinity.
-
-    This follows the specification text. The Sail model instead scales by
-    the exact value 2^eA + eB - 254^ and raises no flags here.
+    B^T^ in bits [15:8]. Reading the scales raises no exception flags.
   }
   body {
     Bits<64> pair_a = zvvm_read_elem(16, (i * r) + s, 0);
     Bits<64> pair_b = zvvm_read_elem(16, (j * r) + s, 0);
-    Bits<64> scale_a = zvvm_decode_scale(pair_a[7:0], fmt_c, rm);
-    Bits<64> scale_b = zvvm_decode_scale(pair_b[15:8], fmt_c, rm);
-    return zvvm_fp_mul(scale_a, scale_b, fmt_c, rm);
+    Bits<32> scale_exp = 0;
+    Boolean is_nan = false;
+    (scale_exp, is_nan) = zvvm_combine_scale_exponents(pair_a[7:0], pair_b[15:8]);
+    return scale_exp, is_nan;
   }
 }
 
@@ -1276,10 +1241,11 @@ function zvvm_fp_scaled_gemm {
     (0) or 16 (1).
 
     Groups do not cross an LMUL=1 step or a microscaling block, so the last
-    group of each block and step intersection can be shorter than G. A NaN
-    combined block scale sets the C element to the default NaN and ends its
-    evaluation: the products of that block and all later blocks are not
-    evaluated and raise no flags.
+    group of each block and step intersection can be shorter than G. The
+    combined E8M0 exponent of a block is applied exactly to each group partial
+    sum of that block, before the +rnd+ treatment. An E8M0 scale of 0xFF sets
+    the C element to the default NaN and ends its evaluation: the products of
+    that block and all later blocks are not evaluated and raise no flags.
   }
   body {
     U32 grouping = zvvm_fp_grouping(g.eew_c, g.w, CSR[vtype].LAMBDA);
@@ -1300,8 +1266,10 @@ function zvvm_fp_scaled_gemm {
 
         for (U32 s = 0; s < s_blocks; s++) {
           if (!nan_out) {
-            Bits<64> blk_scale = zvvm_read_block_scales(i, j, s, r, fmt_c, rm);
-            if (zvvm_fp_is_nan?(blk_scale, fmt_c)) {
+            Bits<32> scale_exp = 0;
+            Boolean scale_nan = false;
+            (scale_exp, scale_nan) = zvvm_read_block_scales(i, j, s, r);
+            if (scale_nan) {
               nan_out = true;
             } else {
               U32 blk_k_lo = s * block_size;
@@ -1318,7 +1286,7 @@ function zvvm_fp_scaled_gemm {
                     U32 g_len = ((subdot_hi - g0 + 1) < grouping) ? (subdot_hi - g0 + 1) : grouping;
                     acc = zvvm_fp_accumulate_group(
                       acc, g, i, j, step, g0, g_len, fmt_a, fmt_b, fmt_c,
-                      psm, rnd, rm, true, blk_scale, vs1, vs2);
+                      psm, rnd, rm, true, scale_exp, vs1, vs2);
                   }
                 }
               }
@@ -1375,9 +1343,9 @@ function zvvm_int_scaled_gemm {
     C from and to +vd+. Block scales, block size and NaN termination are those
     of `zvvm_fp_scaled_gemm`.
 
-    For each block, the exact dot product is converted to +fmt_c+, multiplied
-    by the combined block scale, and added to C, each step rounding with +rm+.
-    G, psm and rnd do not apply.
+    For each block, the exact dot product is multiplied exactly by
+    2^combined E8M0 exponent^, rounded to +fmt_c+ with +rm+, and added to C
+    with +rm+. G, psm and rnd do not apply.
   }
   body {
     U32 block_size = (CSR[vtype].BS == 1) ? 16 : 32;
@@ -1392,16 +1360,18 @@ function zvvm_int_scaled_gemm {
 
         for (U32 s = 0; s < s_blocks; s++) {
           if (!nan_out) {
-            Bits<64> blk_scale = zvvm_read_block_scales(i, j, s, r, fmt_c, rm);
-            if (zvvm_fp_is_nan?(blk_scale, fmt_c)) {
+            Bits<32> scale_exp = 0;
+            Boolean scale_nan = false;
+            (scale_exp, scale_nan) = zvvm_read_block_scales(i, j, s, r);
+            if (scale_nan) {
               nan_out = true;
             } else {
               # The last block may hold fewer than block_size elements.
               U32 k_lo = s * block_size;
               U32 k_hi = (((k_lo + block_size) < g.k_eff) ? (k_lo + block_size) : g.k_eff) - 1;
               Bits<64> dot = zvvm_int_block_dot(g, i, j, k_lo, k_hi, vs1, vs2);
-              Bits<64> fp_sum = zvvm_int_to_fp(dot, fmt_c, rm);
-              acc = zvvm_fp_add(acc, zvvm_fp_mul(blk_scale, fp_sum, fmt_c, rm), fmt_c, rm);
+              ZvvmFpx scaled_sum = zvvm_fp_internal_scale(scale_exp, zvvm_fp_internal_from_int(dot));
+              acc = zvvm_fp_add(acc, zvvm_fp_round_to_frm(scaled_sum, fmt_c, rm), fmt_c, rm);
             }
           }
         }
