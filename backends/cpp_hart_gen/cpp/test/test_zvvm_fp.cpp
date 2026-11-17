@@ -128,6 +128,7 @@ std::pair<mpz_class, bool> round_int(int s, const mpq_class& x, const std::strin
 struct Res {
   uint64_t bits;
   uint32_t flags;
+  bool operator==(const Res& o) const { return bits == o.bits && flags == o.flags; }
 };
 
 Res round_to(const FmtInfo& f, const Val& x, const std::string& rm, bool rto = false) {
@@ -352,7 +353,7 @@ TEST_CASE("Reference rounding agrees with SoftFloat for FP16, FP32 and FP64", "[
 
 // ─── Primitives against the reference ────────────────────────────────────
 
-TEST_CASE("zvvm_fp_add and zvvm_fp_mul match the reference", "[zvvm][fp]") {
+TEST_CASE("zvvm_fp_add matches the reference", "[zvvm][fp]") {
   Fixture fx;
   std::mt19937_64 rng(2);
   for (const FmtInfo* f : {&E5M2, &FP16, &BF16, &FP32, &FP64}) {
@@ -363,12 +364,8 @@ TEST_CASE("zvvm_fp_add and zvvm_fp_mul match the reference", "[zvvm][fp]") {
           const uint64_t a = ops[i], b = ops[j];
           CAPTURE(f->name, rm, fmt::format("{:#x}", a), fmt::format("{:#x}", b));
           const ZvvmFpFmt zf{f->id};
-          Res got = fx.run([&] { return fx.hart->zvvm_fp_add(Bits<64>{a}, Bits<64>{b}, zf, to_rm(rm)); });
-          Res exp = ref_add(*f, a, b, rm);
-          CHECK(got.bits == exp.bits);
-          CHECK(got.flags == exp.flags);
-          got = fx.run([&] { return fx.hart->zvvm_fp_mul(Bits<64>{a}, Bits<64>{b}, zf, to_rm(rm)); });
-          exp = ref_mul(*f, a, b, rm);
+          const Res got = fx.run([&] { return fx.hart->zvvm_fp_add(Bits<64>{a}, Bits<64>{b}, zf, to_rm(rm)); });
+          const Res exp = ref_add(*f, a, b, rm);
           CHECK(got.bits == exp.bits);
           CHECK(got.flags == exp.flags);
         }
@@ -438,7 +435,7 @@ TEST_CASE("OFP decode: E5M2 signaling NaN, single E4M3 NaN, E2M1 values", "[zvvm
   for (uint64_t v = 0; v < 256; v++) {
     CAPTURE(v);
     CHECK_FALSE(fx.hart->zvvm_fp_signaling_nan_Q_(e4m3, Bits<64>{v}));
-    CHECK(fx.hart->zvvm_fp_is_nan_Q_(Bits<64>{v}, e4m3) == ((v & 0x7f) == 0x7f));
+    CHECK((fx.hart->zvvm_fp_decode(e4m3, Bits<64>{v}).kind == ZvvmFpxKind::NaN) == ((v & 0x7f) == 0x7f));
   }
   // 0x7e is 448, the largest E4M3 value; 0x0f is 6, the largest E2M1 magnitude
   CHECK(fx.run([&] {
@@ -455,46 +452,81 @@ TEST_CASE("OFP decode: E5M2 signaling NaN, single E4M3 NaN, E2M1 values", "[zvvm
   CHECK(r.flags == NV);
 }
 
-TEST_CASE("zvvm_decode_scale converts every E8M0 value", "[zvvm][fp]") {
+TEST_CASE("zvvm_combine_scale_exponents adds unbiased E8M0 exponents", "[zvvm][fp]") {
   Fixture fx;
-  for (const FmtInfo* f : {&E5M2, &FP16, &BF16, &FP32, &FP64}) {
-    for (uint64_t e = 0; e < 256; e++) {
-      for (const auto& rm : RMS) {
-        CAPTURE(f->name, e, rm);
-        const Res got = fx.run([&] {
-          return fx.hart->zvvm_decode_scale(Bits<8>{static_cast<uint8_t>(e)}, ZvvmFpFmt{f->id}, to_rm(rm));
-        });
-        Res exp{default_nan(*f), 0};
-        if (e != 0xff) {
-          Val v;
-          v.v = pow2(static_cast<long>(e) - 127);
-          exp = round_to(*f, v, rm);
-        }
-        CHECK(got.bits == exp.bits);
-        CHECK(got.flags == exp.flags);
-      }
+  for (uint32_t a = 0; a < 256; a++) {
+    for (uint32_t b = 0; b < 256; b++) {
+      CAPTURE(a, b);
+      fx.clear_fflags();
+      auto [e, nan] = fx.hart->zvvm_combine_scale_exponents(Bits<8>{a}, Bits<8>{b});
+      CHECK(nan == (a == 0xff || b == 0xff));
+      if (!nan) CHECK(static_cast<int32_t>(static_cast<uint32_t>(e.get())) == static_cast<int32_t>(a + b) - 254);
+      CHECK(fx.fflags() == 0);
     }
   }
 }
 
-TEST_CASE("zvvm_int_to_fp converts block dot products", "[zvvm][fp]") {
+// fp_internal_from_int, then fp_internal_scale, then one rounding: the integer
+// microscaled path. The scaled value must round as x * 2^e does, including far
+// outside the range of the C format.
+TEST_CASE("zvvm_fp_internal_scale applies the exponent exactly before one rounding", "[zvvm][fp]") {
   Fixture fx;
-  for (const FmtInfo* f : {&FP16, &BF16, &FP32}) {
-    for (int64_t x : {0l, 1l, -1l, 255l, 256l, 257l, 2049l, -2049l, 4095l, 65519l, 65520l, -65520l,
+  for (const FmtInfo* f : {&E5M2, &FP16, &BF16, &FP32, &FP64}) {
+    for (int64_t x : {0l, 1l, -1l, 3l, 255l, 256l, 257l, 1024l, 2049l, -2049l, 4095l, 65519l, 65520l, -65520l,
                       1l << 19, -(1l << 19) + 3}) {
-      for (const auto& rm : RMS) {
-        CAPTURE(f->name, x, rm);
-        const Res got = fx.run([&] {
-          return fx.hart->zvvm_int_to_fp(Bits<64>{static_cast<uint64_t>(x)}, ZvvmFpFmt{f->id}, to_rm(rm));
-        });
-        Val v;
-        v.sign = x < 0 ? 1 : 0;
-        v.v = mpq_class(mpz_class(static_cast<long>(x < 0 ? -x : x)));
-        const Res exp = round_to(*f, v, rm);
-        CHECK(got.bits == exp.bits);
-        CHECK(got.flags == exp.flags);
+      for (int32_t e = -300; e <= 300; e += (e > -60 && e < 60) ? 1 : 7) {
+        for (const auto& rm : RMS) {
+          CAPTURE(f->name, x, e, rm);
+          const Res got = fx.run([&] {
+            return fx.hart->zvvm_fp_round_to_frm(
+                fx.hart->zvvm_fp_internal_scale(Bits<32>{static_cast<uint32_t>(e)},
+                                                fx.hart->zvvm_fp_internal_from_int(Bits<64>{static_cast<uint64_t>(x)})),
+                ZvvmFpFmt{f->id}, to_rm(rm));
+          });
+          Val v;
+          v.sign = x < 0 ? 1 : 0;
+          v.v = mpq_class(mpz_class(static_cast<long>(x < 0 ? -x : x))) * pow2(e);
+          const Res exp = round_to(*f, v, rm);
+          CHECK(got.bits == exp.bits);
+          CHECK(got.flags == exp.flags);
+        }
       }
     }
+  }
+  // The specification's example: 2^-15 x 2^-15 applied to 2^10 is 2^-20, a
+  // binary16 subnormal. Rounding the scale product 2^-30 to binary16 first
+  // would give zero.
+  CHECK(fx.run([&] {
+          return fx.hart->zvvm_fp_round_to_frm(
+              fx.hart->zvvm_fp_internal_scale(Bits<32>{static_cast<uint32_t>(-30)},
+                                              fx.hart->zvvm_fp_internal_from_int(Bits<64>{1024})),
+              ZvvmFpFmt{ZvvmFpFmt::FP16}, to_rm("RNE"));
+        }) == Res{0x0010, 0});
+}
+
+TEST_CASE("zvvm_fp_internal_scale keeps zeros, infinities and NaNs", "[zvvm][fp]") {
+  Fixture fx;
+  const ZvvmFpFmt fp16{ZvvmFpFmt::FP16};
+  for (int32_t e : {-254, -1, 0, 1, 254}) {
+    CAPTURE(e);
+    const Bits<32> se{static_cast<uint32_t>(e)};
+    const ZvvmFpxKind inf{ZvvmFpxKind::Inf}, nan{ZvvmFpxKind::NaN};
+    CHECK(fx.run([&] {
+            return fx.hart->zvvm_fp_round_to_frm(fx.hart->zvvm_fp_internal_scale(se, fx.fpx(0, 0, 0)), fp16,
+                                                 to_rm("RNE"));
+          }) == Res{0x0000, 0});
+    CHECK(fx.run([&] {
+            return fx.hart->zvvm_fp_round_to_frm(fx.hart->zvvm_fp_internal_scale(se, fx.fpx(1, 0, 0)), fp16,
+                                                 to_rm("RNE"));
+          }) == Res{0x8000, 0});
+    CHECK(fx.run([&] {
+            return fx.hart->zvvm_fp_round_to_frm(
+                fx.hart->zvvm_fp_internal_scale(se, fx.hart->zvvm_fpx_special(inf, Bits<1>{1})), fp16, to_rm("RNE"));
+          }) == Res{0xfc00, 0});
+    CHECK(fx.run([&] {
+            return fx.hart->zvvm_fp_round_to_frm(
+                fx.hart->zvvm_fp_internal_scale(se, fx.hart->zvvm_fpx_special(nan, Bits<1>{0})), fp16, to_rm("RNE"));
+          }) == Res{0x7e00, 0});
   }
 }
 

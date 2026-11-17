@@ -3,12 +3,13 @@
 
 """Independent reference for the Zvvm FP/MX multiply-accumulate instructions.
 
-Follows the specification pseudocode (integrated-matrix.adoc, v0.9.0-on-main):
+Follows the specification pseudocode (integrated-matrix.adoc, commit 324c62b7):
 fp_gemm, fp_scaled_gemm, int_scaled_gemm, read_block_scales, with
 psm=0 and any G / rnd. Arithmetic is exact (Fraction); rounding follows
 IEEE 754 with tininess after rounding. Decisions shared with the UDB IDL:
 E5M2 S.11111.01 is a signaling NaN; exact-zero sums follow IEEE 754 6.3
-applied in order from +0; scales follow the specification text.
+applied in order from +0. Block scales are applied exactly as a combined
+E8M0 exponent before the rnd treatment.
 """
 
 from collections import Counter
@@ -199,11 +200,18 @@ def fp_mul(a, b, f, rm, fl):
     return round_to(x_mul(operand(f, a, fl), operand(f, b, fl), fl), f, rm, fl)
 
 
-def decode_scale(e, f, rm, fl):
-    if e == 0xFF:
+def combine_scale_exponents(ea, eb):
+    """Return the sum of the unbiased E8M0 exponents, or None if either scale is NaN."""
+    if ea == 0xFF or eb == 0xFF:
         COV["NaN block scale (0xFF)"] += 1
-        return default_nan(f)
-    return round_to((FIN, 0, Fraction(2) ** (e - 127)), f, rm, fl)
+        return None
+    return ea + eb - 254
+
+
+def x_scale(x, e):
+    """Multiply the internal value x by 2**e exactly. Zero, infinity and NaN are unchanged."""
+    k, s, v = x
+    return (k, s, v * Fraction(2) ** e) if k == FIN else x
 
 
 def is_nan(bits, f):
@@ -268,13 +276,11 @@ def group_sum(rf, g, i, j, k_lo, k_hi, fa, fb, rm, vs1, vs2, fl):
 
 def accumulate(acc, s, fc, rnd, rm, scale, fl):
     COV[f"group rnd={rnd}{' scaled' if scale is not None else ''}"] += 1
+    if scale is not None:
+        s = x_scale(s, scale)
     if rnd == "xct":
-        if scale is not None:
-            s = x_mul(operand(fc, scale, fl), s, fl)
         return round_to(x_add(operand(fc, acc, fl), s, rm, fl), fc, rm, fl)
     sb = round_to(s, fc, rm, fl, rto=(rnd == "rto"))
-    if scale is not None:
-        sb = fp_mul(scale, sb, fc, rm, fl)
     return fp_add(acc, sb, fc, rm, fl)
 
 
@@ -290,12 +296,10 @@ def fp_gemm(rf, g, fa, fb, fc, rm, G, rnd, vs1, vs2, vd, fl):
             rf.write(g.eew_c, c_idx(g, i, j), vd, acc)
 
 
-def block_scales(rf, i, j, s, r, fc, rm, fl):
+def block_scales(rf, i, j, s, r):
     pa = rf.read(16, i * r + s, 0)
     pb = rf.read(16, j * r + s, 0)
-    sa = decode_scale(pa & 0xFF, fc, rm, fl)
-    sb = decode_scale(pb >> 8, fc, rm, fl)
-    return fp_mul(sa, sb, fc, rm, fl)
+    return combine_scale_exponents(pa & 0xFF, pb >> 8)
 
 
 def fp_scaled_gemm(rf, g, fa, fb, fc, rm, G, rnd, bs, vs1, vs2, vd, fl):
@@ -308,9 +312,9 @@ def fp_scaled_gemm(rf, g, fa, fb, fc, rm, G, rnd, bs, vs1, vs2, vd, fl):
             acc = rf.read(g.eew_c, c_idx(g, i, j), vd)
             nan_out = False
             for s in range(nblk):
-                scale = block_scales(rf, i, j, s, r, fc, rm, fl)
-                if is_nan(scale, fc):
-                    COV[f"NaN combined block scale in block {'0' if s == 0 else '> 0'}"] += 1
+                scale = block_scales(rf, i, j, s, r)
+                if scale is None:
+                    COV[f"NaN E8M0 scale in block {'0' if s == 0 else '> 0'}"] += 1
                     nan_out = True
                     break
                 blo, bhi = s * bsize, min(s * bsize + bsize, g.k_eff) - 1
@@ -347,9 +351,9 @@ def int_scaled_gemm(rf, g, fc, rm, bs, vs1, vs2, vd, fl):
             acc = rf.read(g.eew_c, c_idx(g, i, j), vd)
             nan_out = False
             for s in range(nblk):
-                scale = block_scales(rf, i, j, s, r, fc, rm, fl)
-                if is_nan(scale, fc):
-                    COV[f"NaN combined block scale in block {'0' if s == 0 else '> 0'}"] += 1
+                scale = block_scales(rf, i, j, s, r)
+                if scale is None:
+                    COV[f"NaN E8M0 scale in block {'0' if s == 0 else '> 0'}"] += 1
                     nan_out = True
                     break
                 dot = 0
@@ -357,6 +361,6 @@ def int_scaled_gemm(rf, g, fc, rm, bs, vs1, vs2, vd, fl):
                     dot += sx(rf.read(g.eew_a, ab_idx(g, i, k), vs1)) * sx(
                         rf.read(g.eew_a, ab_idx(g, j, k), vs2)
                     )
-                f = round_to((FIN, 1 if dot < 0 else 0, Fraction(abs(dot))), fc, rm, fl)
-                acc = fp_add(acc, fp_mul(scale, f, fc, rm, fl), fc, rm, fl)
+                x = x_scale((FIN, 1 if dot < 0 else 0, Fraction(abs(dot))), scale)
+                acc = fp_add(acc, round_to(x, fc, rm, fl), fc, rm, fl)
             rf.write(g.eew_c, c_idx(g, i, j), vd, default_nan(fc) if nan_out else acc)
