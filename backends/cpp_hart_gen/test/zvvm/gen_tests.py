@@ -13,7 +13,7 @@ Output is deterministic. The configurations are read from cfgs/.
 
 A failing program reports test number case * 10^7 + byte offset * 256 + byte
 value for a wrong C byte, and case * 10^7 + 9 * 10^6 + fflags for wrong flags.
-Run with: rake test:zvvm_fp CONFIG=<configuration>
+Run with: rake test:zvvm CONFIG=<configuration>
 """
 
 import os
