@@ -42,6 +42,7 @@ description: |
   _Illegal Instruction_ is raised if any of the following conditions hold:
 
   * `vstart` ≠ 0.
+  * `frm` holds a reserved rounding mode (5, 6 or 7).
   * `SEW = 8` (`EEW = SEW ÷ 4 = 2` is reserved).
   * VL is not a multiple of LAMBDA × LMUL.
   * EMUL_C (= VLEN ÷ (SEW × LAMBDA²)) is not in \{1, 2, 4, 8, 16}.
@@ -75,30 +76,4 @@ access:
   vu: always
 data_independent_timing: false
 operation(): |
-  if (CSR[vstart].VALUE != 0) {
-    raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
-  }
-  check_f_ok($encoding);
-  ZvvmGemmGeom g = zvvm_decode_gemm_geometry(4, $encoding);
-  if (vm == 0) {
-    zvvm_check_microscaling(g, vs1, vs2, vd, $encoding);
-    if (!zvvm_fp_mx_encoding_legal?(g.w, g.eew_c, CSR[vtype].ALTFMTA, CSR[vtype].ALTFMTB, CSR[vtype].ALTFMT, CSR[vtype].BS)) {
-      raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
-    }
-  } else if (!zvvm_fp_encoding_legal?(g.w, g.eew_c, CSR[vtype].ALTFMTA, CSR[vtype].ALTFMTB, CSR[vtype].ALTFMT)) {
-    raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
-  }
-  zvvm_check_gemm_reg_groups(g, vs1, vs2, vd, $encoding);
-  if (vm == 0) {
-    zvvm_fp_scaled_gemm(
-      g.w, g.lambda, g.lmul, vs1, vs2, vd,
-      zvvm_fp_grouping(g.eew_c, g.w, CSR[vtype].LAMBDA),
-      zvvm_fp_psm?(g.eew_c, g.w, CSR[vtype].LAMBDA),
-      zvvm_fp_rnd(g.eew_c, g.w, CSR[vtype].LAMBDA));
-  } else {
-    zvvm_fp_gemm(
-      g.w, g.lambda, g.lmul, vs1, vs2, vd,
-      zvvm_fp_grouping(g.eew_c, g.w, CSR[vtype].LAMBDA),
-      zvvm_fp_psm?(g.eew_c, g.w, CSR[vtype].LAMBDA),
-      zvvm_fp_rnd(g.eew_c, g.w, CSR[vtype].LAMBDA));
-  }
+  zvvm_fp_mmacc(4, vm, vs1, vs2, vd, $encoding);

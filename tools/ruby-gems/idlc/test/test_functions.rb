@@ -5,6 +5,7 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
+require "timeout"
 
 require "idlc"
 require "idlc/passes/reachable_exceptions"
@@ -423,5 +424,34 @@ class TestReachableFunctions < Minitest::Test
     # Key assertion: with the old cache bug, caller2 returned only ["middle"],
     # silently dropping "leaf" because the cache hit skipped fns.concat.
     assert_includes fn_names2, "leaf",   "caller2 should reach leaf via shared cache (transitive)"
+  end
+
+  # A loop whose update is an assignment, in a function evaluated at compile
+  # time more than once. Each evaluation must update its own loop variable;
+  # before the fix, the second evaluation updated the variable of the first
+  # and never terminated.
+  def test_loop_with_assignment_update_is_reevaluated
+    compile_idl(<<~IDL)
+      %version: 1.0
+      function count_halvings {
+        returns Bits<32>
+        arguments Bits<32> n
+        description { number of right shifts that bring n to zero }
+        body {
+          Bits<32> count = 0;
+          for (Bits<32> v = n; v > 0; v = v >> 1) {
+            count = count + 1;
+          }
+          return count;
+        }
+      }
+    IDL
+
+    expr = @compiler.compile_expression("count_halvings(8)", @symtab)
+    Timeout.timeout(60) do
+      assert_equal 4, expr.value(@symtab)
+      assert_equal 4, expr.value(@symtab)
+      assert_equal 3, @compiler.compile_expression("count_halvings(5)", @symtab).value(@symtab)
+    end
   end
 end
