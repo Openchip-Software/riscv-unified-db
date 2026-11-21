@@ -34,3 +34,11 @@ pseudoinstructions:
     to: vmsge.vv vd, vs1, vs2, vm
 data_independent_timing: false
 operation(): |
+  VectorState state = vector_state();
+  U32 sew = state.sew;
+  for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
+    if (vreg_mask_active(vm, i)) {
+      V[vd][i] = ($signed(vreg_sext(sew, vreg_read_elem(sew, i, vs2))) <= $signed(vreg_sext(sew, vreg_read_elem(sew, i, vs1)))) ? 1'b1 : 1'b0;
+    }
+  }
+  CSR[vstart].VALUE = 0;

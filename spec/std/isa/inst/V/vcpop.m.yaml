@@ -29,3 +29,11 @@ access:
   vu: always
 data_independent_timing: false
 operation(): |
+  XReg count = 0;
+  for (U32 i = 0; i < CSR[vl].VALUE; i++) {
+    if (vreg_mask_active(vm, i) && (V[vs2][i] == 1'b1)) {
+      count = count + 1;
+    }
+  }
+  X[xd] = count;
+  CSR[vstart].VALUE = 0;

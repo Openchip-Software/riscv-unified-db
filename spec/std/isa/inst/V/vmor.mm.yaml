@@ -29,3 +29,9 @@ access:
   vu: always
 data_independent_timing: false
 operation(): |
+  for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
+    Bits<1> a = V[vs2][i];
+    Bits<1> b = V[vs1][i];
+    V[vd][i] = a | b;
+  }
+  CSR[vstart].VALUE = 0;
