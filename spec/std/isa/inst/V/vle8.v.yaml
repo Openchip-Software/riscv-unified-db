@@ -30,10 +30,9 @@ access:
 data_independent_timing: false
 operation(): |
   XReg virtual_address = X[xs1];
-  # "A simple in-order implementation can ignore the settings and simply execute all vector instructions using the undisturbed policy"
   for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
-    U32 start_bit_pos = i * 8;
-    U32 end_bit_pos = start_bit_pos + 7;
-    V[vd][end_bit_pos:start_bit_pos] = read_memory(8, virtual_address + i, $encoding)[7:0];
+    if (vreg_mask_active(vm, i)) {
+      vreg_write_elem(8, i, vd, read_memory(8, virtual_address + (i * 1), $encoding));
+    }
   }
   CSR[vstart].VALUE = 0;
