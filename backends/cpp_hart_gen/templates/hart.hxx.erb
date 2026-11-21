@@ -135,7 +135,11 @@ namespace udb {
         <%- applicable_register_files.each do |rf| -%>
         <%- rf_name = rf.name.downcase -%>
         <%- rf.registers.each do |r| -%>
-        <%- next if r.reset_value.nil? -%>
+        <%- if r.reset_value.nil? -%>
+        // registers without a reset value start at zero, so that programs can read them
+        m_<%= rf_name %>regs[<%= r.index %>] = _Bits<1, false>(0_b);
+        <%- next -%>
+        <%- end -%>
         <%- reset_cpp = compile_idl_expr(r.reset_value).gen_cpp(cfg_arch.symtab, 0) -%>
         m_<%= rf_name %>regs[<%= r.index %>] = <%= reset_cpp %>;
         <%- end -%>
