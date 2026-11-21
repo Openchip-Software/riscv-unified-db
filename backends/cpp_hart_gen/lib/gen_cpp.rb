@@ -955,6 +955,17 @@ module Idl
         rf_name = lhs_type.sub_type.name.downcase
         "#{' ' * indent}__UDB_HART->_set_#{rf_name}reg( #{idx.gen_cpp(symtab, 0, indent_spaces:)}, #{rhs.gen_cpp(symtab, 0, indent_spaces:)})"
       elsif lhs.type(symtab).kind == :bits
+        # For a bit of a register file element (RF[reg][bit] = val), the getter
+        # returns by value, so read into a temporary, modify, then write back.
+        if lhs.is_a?(Idl::AryElementAccessAst)
+          var_type = lhs.var.type(symtab) rescue nil
+          if var_type&.kind == :array &&
+             var_type.sub_type.is_a?(Idl::RegFileElementType) &&
+             var_type.qualifiers.include?(:global)
+            rf_name = var_type.sub_type.name.downcase
+            return "#{' ' * indent}__UDB_HART->_set_#{rf_name}reg( #{lhs.index.gen_cpp(symtab, 0, indent_spaces:)}, ([&]() { auto __udb_reg_tmp = #{lhs.gen_cpp(symtab)}; __udb_reg_tmp.setBit(#{idx.gen_cpp(symtab, 0, indent_spaces:)}, #{rhs.gen_cpp(symtab, 0, indent_spaces:)}); return __udb_reg_tmp; }()))"
+          end
+        end
         "#{' ' * indent}#{lhs.gen_cpp(symtab, 0, indent_spaces:)}.setBit(#{idx.gen_cpp(symtab, 0, indent_spaces:)}, #{rhs.gen_cpp(symtab, 0, indent_spaces:)})"
       else
         # actually an array
