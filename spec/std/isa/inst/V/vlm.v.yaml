@@ -27,3 +27,10 @@ access:
   vu: always
 data_independent_timing: false
 operation(): |
+  # the mask occupies ceil(vl / 8) bytes, loaded with EEW = 8
+  XReg virtual_address = X[xs1];
+  U32 nbytes = (CSR[vl].VALUE + 7) / 8;
+  for (U32 i = CSR[vstart].VALUE; i < nbytes; i++) {
+    vreg_write_elem(8, i, vd, read_memory(8, virtual_address + i, $encoding));
+  }
+  CSR[vstart].VALUE = 0;

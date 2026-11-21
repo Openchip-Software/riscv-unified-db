@@ -32,3 +32,13 @@ access:
   vu: always
 data_independent_timing: false
 operation(): |
+  VectorState state = vector_state();
+  U32 sew = state.sew;
+  XReg simm = $signed(imm);
+  Bits<64> rhs = vreg_scalar(sew, simm);
+  for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
+    if (vreg_mask_active(vm, i)) {
+      V[vd][i] = (vreg_read_elem(sew, i, vs2) == rhs) ? 1'b1 : 1'b0;
+    }
+  }
+  CSR[vstart].VALUE = 0;

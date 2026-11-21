@@ -31,3 +31,18 @@ access:
   vu: always
 data_independent_timing: false
 operation(): |
+  VectorState state = vector_state();
+  U32 sew = state.sew;
+  XReg offset = imm;
+  XReg vlmax = vreg_vlmax();
+  for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
+    if (vreg_mask_active(vm, i)) {
+      # source elements at or above VLMAX read as zero
+      if ((offset < vlmax) && (i < vlmax - offset)) {
+        vreg_write_elem(sew, i, vd, vreg_read_elem(sew, i + offset, vs2));
+      } else {
+        vreg_write_elem(sew, i, vd, 0);
+      }
+    }
+  }
+  CSR[vstart].VALUE = 0;

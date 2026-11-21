@@ -108,3 +108,67 @@ function vreg_mask_active {
     return (vm == 1'b1) || (V[0][index] == 1'b1);
   }
 }
+
+function vreg_vlmax {
+  returns XReg
+  description {
+    Return VLMAX = LMUL * VLEN / SEW for the current vtype.
+  }
+  body {
+    VectorState state = vector_state();
+    XReg vlen = VLEN;
+    if (state.lmul_type == VectorLmulType::Multiply) {
+      return (vlen << state.log2_lmul) >> state.log2_sew;
+    } else {
+      return (vlen >> state.log2_lmul) >> state.log2_sew;
+    }
+  }
+}
+
+function vreg_trunc {
+  returns Bits<64>
+  arguments
+    U32 sew,
+    Bits<64> value
+  description {
+    Return the low +sew+ bits of +value+, zero-extended to 64 bits.
+  }
+  body {
+    if (sew == 64) {
+      return value;
+    }
+    return value & ((64'b1 << sew) - 1);
+  }
+}
+
+function vreg_sext {
+  returns Bits<64>
+  arguments
+    U32 sew,
+    Bits<64> value
+  description {
+    Return the low +sew+ bits of +value+, sign-extended to 64 bits.
+  }
+  body {
+    Bits<64> sign_bit = 64'b1 << (sew - 1);
+    return (vreg_trunc(sew, value) ^ sign_bit) - sign_bit;
+  }
+}
+
+function vreg_scalar {
+  returns Bits<64>
+  arguments
+    U32 sew,
+    XReg value
+  description {
+    Return the scalar operand +value+ of a .vx instruction as an element of
+    width +sew+: sign-extended from XLEN, then truncated to +sew+ bits.
+  }
+  body {
+    Bits<64> wide = value;
+    if (xlen() == 32) {
+      wide = vreg_sext(32, wide);
+    }
+    return vreg_trunc(sew, wide);
+  }
+}

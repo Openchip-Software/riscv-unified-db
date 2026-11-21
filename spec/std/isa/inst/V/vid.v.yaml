@@ -27,3 +27,11 @@ access:
   vu: always
 data_independent_timing: false
 operation(): |
+  VectorState state = vector_state();
+  U32 sew = state.sew;
+  for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
+    if (vreg_mask_active(vm, i)) {
+      vreg_write_elem(sew, i, vd, vreg_trunc(sew, i));
+    }
+  }
+  CSR[vstart].VALUE = 0;
