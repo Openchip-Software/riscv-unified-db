@@ -1424,84 +1424,81 @@ function current_translation_mode {
       return SatpMode::Bare;
     }
 
-    if (CSR[misa].H == 1'b1) {
-      if (effective_mode == PrivilegeMode::VS || effective_mode == PrivilegeMode::VU) {
-        Bits<4> mode_val = CSR[vsatp].MODE;
-        if (mode_val == $bits(SatpMode::Bare)) {
-          return SatpMode::Bare;
-        } else if (mode_val == $bits(SatpMode::Sv32)) {
-          # Sv32 is only defined when XLEN == 32
-          if (MXLEN == 64) {
-            if ((effective_mode == PrivilegeMode::VS) && (CSR[hstatus].VSXL != $bits(XRegWidth::XLEN32))) {
-              # not supported in this XLEN
-              return SatpMode::Reserved;
-            }
-            if ((effective_mode == PrivilegeMode::VU) && (CSR[vsstatus].UXL != $bits(XRegWidth::XLEN32))) {
-              # not supported in this XLEN
-              return SatpMode::Reserved;
-            }
-          }
-          if (!SV32_VSMODE_TRANSLATION) {
-            # not supported in this configuration
-            return SatpMode::Reserved;
-          }
-
-          # OK
-          return SatpMode::Sv32;
-        } else if ((MXLEN == 64) && (mode_val == $bits(SatpMode::Sv39))) {
-          # Sv39 is only defined when XLEN == 64
-          if (effective_mode == PrivilegeMode::VS && CSR[hstatus].VSXL != $bits(XRegWidth::XLEN64)) {
+    if ((CSR[misa].H == 1'b1) &&
+        (effective_mode == PrivilegeMode::VS || effective_mode == PrivilegeMode::VU)) {
+      Bits<4> mode_val = CSR[vsatp].MODE;
+      if (mode_val == $bits(SatpMode::Bare)) {
+        return SatpMode::Bare;
+      } else if (mode_val == $bits(SatpMode::Sv32)) {
+        # Sv32 is only defined when XLEN == 32
+        if (MXLEN == 64) {
+          if ((effective_mode == PrivilegeMode::VS) && (CSR[hstatus].VSXL != $bits(XRegWidth::XLEN32))) {
             # not supported in this XLEN
             return SatpMode::Reserved;
           }
-          if (effective_mode == PrivilegeMode::VU && CSR[vsstatus].UXL != $bits(XRegWidth::XLEN64)) {
+          if ((effective_mode == PrivilegeMode::VU) && (CSR[vsstatus].UXL != $bits(XRegWidth::XLEN32))) {
             # not supported in this XLEN
             return SatpMode::Reserved;
           }
-          if (!SV39_VSMODE_TRANSLATION) {
-            # not supported in this configuration
-            return SatpMode::Reserved;
-          }
-
-          # OK
-          return SatpMode::Sv39;
-        } else if ((MXLEN == 64) && (mode_val == $bits(SatpMode::Sv48))) {
-          # Sv48 is only defined when XLEN == 64
-          if (effective_mode == PrivilegeMode::VS && CSR[hstatus].VSXL != $bits(XRegWidth::XLEN64)) {
-            # not supported in this XLEN
-            return SatpMode::Reserved;
-          }
-          if (effective_mode == PrivilegeMode::VU && CSR[vsstatus].UXL != $bits(XRegWidth::XLEN64)) {
-            # not supported in this XLEN
-            return SatpMode::Reserved;
-          }
-          if (!SV48_VSMODE_TRANSLATION) {
-            # not supported in this configuration
-            return SatpMode::Reserved;
-          }
-
-          # OK
-          return SatpMode::Sv48;
-        } else if ((MXLEN == 64) && (mode_val == $bits(SatpMode::Sv57))) {
-          # Sv57 is only defined when XLEN == 64
-          if (effective_mode == PrivilegeMode::VS && CSR[hstatus].VSXL != $bits(XRegWidth::XLEN64)) {
-            # not supported in this XLEN
-            return SatpMode::Reserved;
-          }
-          if (effective_mode == PrivilegeMode::VU && CSR[vsstatus].UXL != $bits(XRegWidth::XLEN64)) {
-            # not supported in this XLEN
-            return SatpMode::Reserved;
-          }
-          if (!SV57_VSMODE_TRANSLATION) {
-            # not supported in this configuration
-            return SatpMode::Reserved;
-          }
-
-          # OK
-          return SatpMode::Sv57;
-        } else {
+        }
+        if (!SV32_VSMODE_TRANSLATION) {
+          # not supported in this configuration
           return SatpMode::Reserved;
         }
+
+        # OK
+        return SatpMode::Sv32;
+      } else if ((MXLEN == 64) && (mode_val == $bits(SatpMode::Sv39))) {
+        # Sv39 is only defined when XLEN == 64
+        if (effective_mode == PrivilegeMode::VS && CSR[hstatus].VSXL != $bits(XRegWidth::XLEN64)) {
+          # not supported in this XLEN
+          return SatpMode::Reserved;
+        }
+        if (effective_mode == PrivilegeMode::VU && CSR[vsstatus].UXL != $bits(XRegWidth::XLEN64)) {
+          # not supported in this XLEN
+          return SatpMode::Reserved;
+        }
+        if (!SV39_VSMODE_TRANSLATION) {
+          # not supported in this configuration
+          return SatpMode::Reserved;
+        }
+
+        # OK
+        return SatpMode::Sv39;
+      } else if ((MXLEN == 64) && (mode_val == $bits(SatpMode::Sv48))) {
+        # Sv48 is only defined when XLEN == 64
+        if (effective_mode == PrivilegeMode::VS && CSR[hstatus].VSXL != $bits(XRegWidth::XLEN64)) {
+          # not supported in this XLEN
+          return SatpMode::Reserved;
+        }
+        if (effective_mode == PrivilegeMode::VU && CSR[vsstatus].UXL != $bits(XRegWidth::XLEN64)) {
+          # not supported in this XLEN
+          return SatpMode::Reserved;
+        }
+        if (!SV48_VSMODE_TRANSLATION) {
+          # not supported in this configuration
+          return SatpMode::Reserved;
+        }
+
+        # OK
+        return SatpMode::Sv48;
+      } else if ((MXLEN == 64) && (mode_val == $bits(SatpMode::Sv57))) {
+        # Sv57 is only defined when XLEN == 64
+        if (effective_mode == PrivilegeMode::VS && CSR[hstatus].VSXL != $bits(XRegWidth::XLEN64)) {
+          # not supported in this XLEN
+          return SatpMode::Reserved;
+        }
+        if (effective_mode == PrivilegeMode::VU && CSR[vsstatus].UXL != $bits(XRegWidth::XLEN64)) {
+          # not supported in this XLEN
+          return SatpMode::Reserved;
+        }
+        if (!SV57_VSMODE_TRANSLATION) {
+          # not supported in this configuration
+          return SatpMode::Reserved;
+        }
+
+        # OK
+        return SatpMode::Sv57;
       } else {
         return SatpMode::Reserved;
       }
