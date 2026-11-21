@@ -29,3 +29,10 @@ access:
   vu: always
 data_independent_timing: false
 operation(): |
+  XReg virtual_address = X[xs1];
+  for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
+    if (vreg_mask_active(vm, i)) {
+      write_memory(16, virtual_address + (i * 2), vreg_read_elem(16, i, vs3)[15:0], $encoding);
+    }
+  }
+  CSR[vstart].VALUE = 0;
