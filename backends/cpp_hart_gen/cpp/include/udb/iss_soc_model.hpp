@@ -64,6 +64,11 @@ namespace udb {
         MemAccessRange memAccessData(addr, bytes);
         this->Notify(MEMREAD_EVENT, &memAccessData);
 
+        // addresses outside RAM (for example a CLINT or another device) read as zero
+        if (!in_bounds(addr, bytes)) {
+          return 0;
+        }
+
         switch (bytes) {
           case 1:
             return m_data[addr - m_offset];
@@ -80,6 +85,11 @@ namespace udb {
 
       void write(uint64_t addr, uint64_t data, size_t bytes) {
         MemAccess memAccess(addr, bytes, data);
+        // writes to addresses outside RAM (for example a CLINT or another device) are ignored
+        if (!in_bounds(addr, bytes)) {
+          this->Notify(MEMWRITE_EVENT, &memAccess);
+          return;
+        }
         switch (bytes) {
           case 1:
             m_data[addr - m_offset] = data;
@@ -123,6 +133,11 @@ namespace udb {
       }
 
      private:
+      bool in_bounds(uint64_t addr, size_t bytes) const {
+        return addr >= m_offset && (addr - m_offset) <= m_data.size() &&
+               bytes <= m_data.size() - (addr - m_offset);
+      }
+
       std::vector<uint8_t> m_data;
       uint64_t m_offset;
       uint8_t *m_addend = nullptr;
