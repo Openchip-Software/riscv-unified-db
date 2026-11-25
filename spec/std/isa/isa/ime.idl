@@ -679,80 +679,77 @@ function zvvm_int_mmacc {
   }
 }
 
-# The floating-point and microscaled arithmetic is supplied by the hart through
-# the builtins below. The alternative is IDL bodies for the specification's
-# fp_gemm, fp_scaled_gemm and int_scaled_gemm. They need exact OFP4, OFP8, BF16,
-# FP16 and FP64 arithmetic with round-to-odd, which fp.idl lacks, and the psm=1
-# reduction is implementation-defined. An empty operation() would be a no-op.
-
-builtin function zvvm_fp_gemm {
+function zvvm_fp_mmacc {
   arguments
     U32 w,
-    U32 lambda,
-    U32 lmul,
+    Bits<1> vm,
     Bits<5> vs1,
     Bits<5> vs2,
     Bits<5> vd,
-    U32 grouping,
-    Boolean psm,
-    Bits<2> rnd
+    Bits<INSTR_ENC_SIZE> encoding
   description {
-    C += A x B^T^ on floating-point tiles, as the specification helper
-    `fp_gemm` defines, for the geometry given by +w+, +lambda+, LMUL = +lmul+,
-    SEW, VLEN and VL. A is read from +vs1+, B from +vs2+, and C from and to +vd+.
-
-    The A and B formats come from vtype.ALTFMTA and vtype.ALTFMTB with the
-    input element width SEW / +w+; the C format comes from vtype.ALTFMT with
-    SEW. Final accumulation rounds with the rounding mode in frm, and exception
-    flags accrue in fflags.
-
-    +grouping+ (G), +psm+ and +rnd+ are the disclosed values for this
-    (SEW, W, lambda): +rnd+ is 0 for frm, 1 for rto and 2 for xct. With +psm+
-    true, each group is reduced by the algorithm in ZVVM_FP_PSM1_ALGORITHM.
+    Execute the floating-point multiply-accumulate with widening factor +w+:
+    vfmmacc.vv (1), vfwmmacc.vv (2), vfqmmacc.vv (4) or vf8wmmacc.vv (8).
+    With +vm+ = 0 the multiply-accumulate is microscaled: the block scales are
+    read from v0, and the microscaling encoding map applies. The encoding of
+    vfmmacc.vv fixes +vm+ to 1. A nonzero vstart, a reserved row of the
+    encoding map, or a failed geometry, microscaling or register-group check
+    raises an illegal-instruction exception.
+  }
+  body {
+    if (CSR[vstart].VALUE != 0) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    check_f_ok(encoding);
+    ZvvmGemmGeom g = zvvm_decode_gemm_geometry(w, encoding);
+    if (vm == 0) {
+      zvvm_check_microscaling(g, vs1, vs2, vd, encoding);
+      if (!zvvm_fp_mx_encoding_legal?(g.w, g.eew_c, CSR[vtype].ALTFMTA, CSR[vtype].ALTFMTB, CSR[vtype].ALTFMT, CSR[vtype].BS)) {
+        raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+      }
+    } else if (!zvvm_fp_encoding_legal?(g.w, g.eew_c, CSR[vtype].ALTFMTA, CSR[vtype].ALTFMTB, CSR[vtype].ALTFMT)) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    zvvm_check_gemm_reg_groups(g, vs1, vs2, vd, encoding);
+    ZvvmFpFmt fmt_a = zvvm_fp_format_of(g.eew_a, CSR[vtype].ALTFMTA);
+    ZvvmFpFmt fmt_b = zvvm_fp_format_of(g.eew_a, CSR[vtype].ALTFMTB);
+    ZvvmFpFmt fmt_c = zvvm_fp_format_of(g.eew_c, CSR[vtype].ALTFMT);
+    RoundingMode rm = zvvm_fp_rounding_mode(encoding);
+    if (vm == 0) {
+      zvvm_fp_scaled_gemm(g, fmt_a, fmt_b, fmt_c, rm, vs1, vs2, vd, encoding);
+    } else {
+      zvvm_fp_gemm(g, fmt_a, fmt_b, fmt_c, rm, vs1, vs2, vd, encoding);
+    }
   }
 }
 
-builtin function zvvm_fp_scaled_gemm {
+function zvvm_int_mx_mmacc {
   arguments
     U32 w,
-    U32 lambda,
-    U32 lmul,
     Bits<5> vs1,
     Bits<5> vs2,
     Bits<5> vd,
-    U32 grouping,
-    Boolean psm,
-    Bits<2> rnd
+    Bits<INSTR_ENC_SIZE> encoding
   description {
-    C += scale_A x scale_B x (A x B^T^) on microscaled floating-point tiles,
-    as the specification helper `fp_scaled_gemm` defines. The arguments are
-    those of zvvm_fp_gemm. The E8M0 block-scale pairs are read from v0, and
-    vtype.BS selects block size 32 (0) or 16 (1).
-
-    The unbiased exponents of the two E8M0 scales of a block are added. The
-    sum is applied exactly to each internal group partial sum of that block,
-    before the treatment selected by +rnd+. Neither scale nor their product is
-    converted to the C format. Reading and applying the scales raises no
-    exception flags. A scale encoding of 0xFF sets the C element to the default
-    NaN.
+    Execute the microscaled multiply-accumulate with integer A and B elements
+    and a floating-point C tile, with widening factor +w+: vfwimmacc.vv (2),
+    vfqimmacc.vv (4) or vf8wimmacc.vv (8). A nonzero vstart, a reserved row of
+    the encoding map, or a failed geometry, microscaling or register-group
+    check raises an illegal-instruction exception.
   }
-}
-
-builtin function zvvm_int_scaled_gemm {
-  arguments
-    U32 w,
-    U32 lambda,
-    U32 lmul,
-    Bits<5> vs1,
-    Bits<5> vs2,
-    Bits<5> vd
-  description {
-    C += scale_A x scale_B x (A x B^T^) with signed integer A and B tiles and a
-    floating-point C tile, as the specification helper `int_scaled_gemm`
-    defines. Each block dot product is exact. The sum of the unbiased exponents
-    of the two E8M0 scales of the block is applied to it exactly. The scaled
-    sum is then rounded to the C format with the rounding mode in frm and added
-    to C with the same rounding mode. The E8M0 block-scale pairs are read from
-    v0, vtype.BS selects the block size, and vtype.ALTFMT selects the C format.
+  body {
+    if (CSR[vstart].VALUE != 0) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    check_f_ok(encoding);
+    ZvvmGemmGeom g = zvvm_decode_gemm_geometry(w, encoding);
+    zvvm_check_microscaling(g, vs1, vs2, vd, encoding);
+    if (!zvvm_int_mx_encoding_legal?(g.w, g.eew_c, CSR[vtype].ALTFMTA, CSR[vtype].ALTFMTB, CSR[vtype].ALTFMT, CSR[vtype].BS)) {
+      raise(ExceptionCode::IllegalInstruction, mode(), encoding);
+    }
+    zvvm_check_gemm_reg_groups(g, vs1, vs2, vd, encoding);
+    ZvvmFpFmt fmt_c = zvvm_fp_format_of(g.eew_c, CSR[vtype].ALTFMT);
+    RoundingMode rm = zvvm_fp_rounding_mode(encoding);
+    zvvm_int_scaled_gemm(g, fmt_c, rm, vs1, vs2, vd);
   }
 }
