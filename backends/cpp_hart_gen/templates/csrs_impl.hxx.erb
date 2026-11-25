@@ -51,7 +51,12 @@ void <%= name_of(:csr_field, cfg_arch, csr.name, field.name) %><SocType>::reset(
   <%- if ast.nil? -%>
   <%- v = field.reset_value -%>
   <%- if v == "UNDEFINED_LEGAL" -%>
-  m_value = ValueType(); // default constructor is entirely undefined
+  // UNDEFINED_LEGAL fields reset to zero, so that programs can read them
+  <%- if cfg_arch.multi_xlen? && field.dynamic_location? -%>
+  _hw_write(0_b, m_hart->xlen().to_defined());
+  <%- else -%>
+  _hw_write(0_b);
+  <%- end -%>
   <%- else -%>
   <%- if cfg_arch.multi_xlen? && field.dynamic_location? -%>
   _hw_write(<%= v %>_b, m_hart->xlen().to_defined());
@@ -65,7 +70,8 @@ void <%= name_of(:csr_field, cfg_arch, csr.name, field.name) %><SocType>::reset(
   {
     <%= ast.gen_cpp(cfg_arch.symtab, 8) %>
   };
-  auto val = val_fn();
+  // unknown reset bits become zero
+  auto val = Bits<<%= max_width + 1 %>>{val_fn().get_ignore_unknown()};
   <%- if cfg_arch.multi_xlen? && field.dynamic_location? -%>
   _hw_write(val, m_hart->xlen().to_defined());
   <%- else -%>
@@ -209,6 +215,8 @@ bool <%= name_of(:csr, cfg_arch, csr.name) %><SocType>::_sw_write(const Possibly
       <%- symtab.release -%>
     };
     auto wr_val = wr_val_fn();
+    // a write that legalizes to an undefined value keeps the old value
+    if (wr_val.unknown_mask() == 0_b)
     <%- if cfg_arch.multi_xlen? && field.dynamic_location? -%>
     m_<%= field.name %>._hw_write(wr_val, xlen);
     <%- else -%>
@@ -247,6 +255,8 @@ bool <%= name_of(:csr, cfg_arch, csr.name) %><SocType>::_sw_write(const Possibly
       <%- symtab.release -%>
     };
     auto wr_val = wr_val_fn();
+    // a write that legalizes to an undefined value keeps the old value
+    if (wr_val.unknown_mask() == 0_b)
     m_<%= field.name %>._hw_write(wr_val);
   }
   <%- else -%>

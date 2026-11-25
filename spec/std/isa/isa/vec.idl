@@ -52,3 +52,95 @@ function vector_state {
     return state;
   }
 }
+
+function vreg_read_elem {
+  returns Bits<64>
+  arguments
+    U32 eew,
+    U32 index,
+    Bits<5> base
+  description {
+    Return element +index+ of width +eew+ of the vector register group that
+    starts at register +base+, zero-extended to 64 bits.
+
+    With LMUL > 1, element +index+ is element (index mod VLEN/eew) of
+    register base + index / (VLEN/eew).
+  }
+  body {
+    U32 elems_per_reg = VLEN / eew;
+    Bits<5> reg = base + (index / elems_per_reg);
+    U32 lo = (index % elems_per_reg) * eew;
+    return V[reg][lo + eew - 1:lo];
+  }
+}
+
+function vreg_write_elem {
+  arguments
+    U32 eew,
+    U32 index,
+    Bits<5> base,
+    Bits<64> value
+  description {
+    Write the low +eew+ bits of +value+ to element +index+ of the vector
+    register group that starts at register +base+.
+
+    With LMUL > 1, element +index+ is element (index mod VLEN/eew) of
+    register base + index / (VLEN/eew).
+  }
+  body {
+    U32 elems_per_reg = VLEN / eew;
+    Bits<5> reg = base + (index / elems_per_reg);
+    U32 lo = (index % elems_per_reg) * eew;
+    V[reg][lo + eew - 1:lo] = value;
+  }
+}
+
+function vreg_mask_active {
+  returns Boolean
+  arguments
+    Bits<1> vm,
+    U32 index
+  description {
+    Return true when element +index+ is active: the instruction is unmasked
+    (+vm+ is 1), or bit +index+ of the mask register v0 is set.
+  }
+  body {
+    return (vm == 1'b1) || (V[0][index] == 1'b1);
+  }
+}
+
+function vtype_altfmt_implemented? {
+  returns Boolean
+  description {
+    Return true if vtype has the ALTFMT field (bit 8), which Zvfbfa and Zvvfmm define.
+  }
+  body {
+    return implemented?(ExtensionName::Zvfbfa) || implemented?(ExtensionName::Zvvfmm);
+  }
+}
+
+function vtype_altfmt_reserved? {
+  returns Boolean
+  arguments
+    XReg new_vtype
+  description {
+    Return true if +new_vtype+, a value written by a vset* instruction, sets
+    ALTFMT together with SEW >= 32, a reserved combination.
+  }
+  body {
+    return vtype_altfmt_implemented?() && (new_vtype[8] == 1) && (new_vtype[5:3] >= 2);
+  }
+}
+
+function write_vtype_altfmt {
+  arguments
+    Bits<1> altfmt
+  description {
+    Write +altfmt+ to vtype.ALTFMT when the field exists.
+  }
+  body {
+    if (vtype_altfmt_implemented?()) {
+      CSR[vtype].ALTFMT = altfmt;
+    }
+  }
+}

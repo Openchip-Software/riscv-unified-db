@@ -135,7 +135,11 @@ namespace udb {
         <%- applicable_register_files.each do |rf| -%>
         <%- rf_name = rf.name.downcase -%>
         <%- rf.registers.each do |r| -%>
-        <%- next if r.reset_value.nil? -%>
+        <%- if r.reset_value.nil? -%>
+        // registers without a reset value start at zero, so that programs can read them
+        m_<%= rf_name %>regs[<%= r.index %>] = _Bits<1, false>(0_b);
+        <%- next -%>
+        <%- end -%>
         <%- reset_cpp = compile_idl_expr(r.reset_value).gen_cpp(cfg_arch.symtab, 0) -%>
         m_<%= rf_name %>regs[<%= r.index %>] = <%= reset_cpp %>;
         <%- end -%>
@@ -341,6 +345,8 @@ namespace udb {
       <%- bits_width = rf_elem_width(rf) -%>
       <%- rf_width = rf.eval_register_length(cfg_arch) -%>
       <%- is_runtime_width = rf_width.is_a?(String) -%>
+      <%# registers wider than 128 bits are stored in GMP, like runtime-width ones -%>
+      <%- is_gmp_width = is_runtime_width || rf_width > 128 -%>
       <%- accessor_type = is_runtime_width ? "PossiblyUnknownRuntimeBits<#{rf.max_register_length}>" : "PossiblyUnknownBits<#{bits_width}>" -%>
       <%- setter_param_type = is_runtime_width ? "_PossiblyUnknownRuntimeBits<#{rf.max_register_length}, false>" : "_PossiblyUnknownBits<#{bits_width}, false>" -%>
       <%- entries_with_read = rf.registers.select { |r| r.arch_read } -%>
@@ -350,7 +356,7 @@ namespace udb {
         if (num >= <%= rf.registers.count %>) {
           throw std::out_of_range("<%= rf.name %> register indices are 0 - <%= rf.registers.count - 1 %>, inclusive");
         }
-        <%- if is_runtime_width -%>
+        <%- if is_gmp_width -%>
         return static_cast<uint64_t>(_<%= rf_name %>reg(num).get().get_ui());
         <%- else -%>
         return _<%= rf_name %>reg(num).get();

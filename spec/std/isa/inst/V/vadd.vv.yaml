@@ -33,21 +33,10 @@ access:
 data_independent_timing: true
 operation(): |
   VectorState state = vector_state();
-  VectorLmulType lmul_type = state.lmul_type;
-
-  XReg vlen = VLEN;
-  XReg vlmax;
-  if (lmul_type == VectorLmulType::Multiply) {
-    vlmax = (vlen << state.log2_lmul) >> state.log2_sew;
-  } else {
-    # (lmul_type == VectorLmulType::Divide)
-    vlmax = (vlen >> state.log2_lmul) >> state.log2_sew;
-  }
-
+  U32 sew = state.sew;
   for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
-    U32 start_bit_pos = i * state.sew;
-    U32 end_bit_pos = start_bit_pos + state.sew - 1;
-    V[vd][end_bit_pos:start_bit_pos] = V[vs2][end_bit_pos:start_bit_pos] + V[vs1][end_bit_pos:start_bit_pos];
+    if (vreg_mask_active(vm, i)) {
+      vreg_write_elem(sew, i, vd, vreg_read_elem(sew, i, vs2) + vreg_read_elem(sew, i, vs1));
+    }
   }
-
   CSR[vstart].VALUE = 0;
