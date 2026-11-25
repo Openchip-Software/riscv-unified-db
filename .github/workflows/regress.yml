@@ -420,6 +420,7 @@ jobs:
           - _
           - rv32
           - rv64-ime # a config with the Zvvm extensions
+          - rv32-ime # the same Zvvm extensions on RV32
   regress-test-inst-encodings:
     runs-on: ubuntu-latest
     steps:
